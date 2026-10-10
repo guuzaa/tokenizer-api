@@ -123,7 +123,12 @@ function assertTextMessages(messages: ChatMessage[]): void {
     if (message == null || typeof message !== "object" || Array.isArray(message)) {
       throw new EncodeError(`message ${index} must be an object`);
     }
-    if (message.role === "tool") return;
+    if (message.role === "tool") {
+      if (typeof message.content !== "string" && !Array.isArray(message.content)) {
+        throw new EncodeError(`message ${index} content must be a string`);
+      }
+      return;
+    }
     if (message.content != null && typeof message.content !== "string") {
       throw new EncodeError(`message ${index} content must be a string`);
     }

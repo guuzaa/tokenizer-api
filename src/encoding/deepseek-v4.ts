@@ -236,7 +236,7 @@ function blockText(block: ContentBlock): string {
     return typeof block.text === "string" ? block.text : pyOrEmpty(block.text);
   }
   if (block.type === "tool_result") {
-    let toolContent = block.content ?? "";
+    let toolContent = block.content;
     if (Array.isArray(toolContent)) {
       const textParts = toolContent.map((part) => {
         const record = asRecord(part, "tool result block must be an object");
@@ -245,7 +245,13 @@ function blockText(block: ContentBlock): string {
       });
       toolContent = textParts.join("\n\n");
     }
-    return `<tool_result>${typeof toolContent === "string" ? toolContent : pyOrEmpty(toolContent)}</tool_result>`;
+    if (typeof toolContent !== "string") {
+      // encoding_dsv4.py uses Python's str()/repr(). A JSON body cannot reproduce
+      // that exactly: `22.0` and `22` are the same number after JSON.parse, and
+      // CPython prints them differently inside a dict.
+      throw new EncodeError("tool content must be a string");
+    }
+    return `<tool_result>${toolContent}</tool_result>`;
   }
   return `[Unsupported ${String(block.type)}]`;
 }
@@ -378,7 +384,7 @@ function mergeToolMessages(messages: ChatMessage[]): ChatMessage[] {
       const toolBlock: ContentBlock = {
         type: "tool_result",
         tool_use_id: typeof msg.tool_call_id === "string" ? msg.tool_call_id : "",
-        content: msg.content ?? "",
+        content: msg.content === undefined ? "" : msg.content,
       };
       const prev = merged[merged.length - 1];
       if (prev?.role === "user" && prev.content_blocks) {

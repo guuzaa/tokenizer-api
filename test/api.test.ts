@@ -43,6 +43,29 @@ test("rejects an unknown model", async () => {
   expect(response.status).toBe(400);
 });
 
+test("rejects non-string tool content", async () => {
+  const response = await handleCount(
+    post({
+      model: "deepseek-v4",
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: "{\"location\":\"Beijing\"}" } }],
+        },
+        { role: "tool", tool_call_id: "call_1", content: { temperature: 22 } },
+      ],
+    }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: { message: "message 1 content must be a string", type: "invalid_request_error" },
+  });
+});
+
 test("rejects image content", async () => {
   const response = await handleCount(
     post({

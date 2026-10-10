@@ -32,7 +32,7 @@ curl http://localhost:8787/v1/token/count \
 
 `tools` on a message is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). The schemas are written into the prompt.
 
-`tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus string `content`) is merged into a user turn as a `<tool_result>` block. Non-string tool `content` is rejected.
+`tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus string `content`) is merged into a user turn as a `<tool_result>` block. Tool `content` must be a string, or a list of content blocks. Objects, numbers, booleans, and null are rejected: the official encoder prints those with Python's `repr`, and a JSON body cannot reproduce that exactly (`22.0` and `22` are the same number after parsing).
 
 `reasoning_content` on an assistant message is that turn's thinking text.
 
