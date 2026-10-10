@@ -3,6 +3,8 @@
 // Runtime types generated with workerd@1.20261006.1 2026-10-09
 interface __BaseEnv_Env {
 	RATE_LIMITER: RateLimit;
+	MAX_PROMPT_BYTES: string;
+	MAX_BODY_BYTES: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

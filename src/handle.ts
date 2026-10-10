@@ -1,12 +1,12 @@
 import { EncodeError } from "./encoding/deepseek-v4";
 import { TokenizerInputError } from "./tokenizer";
-import { MAX_BODY_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "./limits";
+import { RATE_LIMIT_PERIOD_SECONDS, resolveRequestLimits, type LimitEnv } from "./limits";
 import { modelFamilies, resolveModel } from "./models/registry";
 import type { CountFn, Model, ModelFamily } from "./models/types";
 
 export type { CountFn };
 
-export interface CountEnv {
+export interface CountEnv extends LimitEnv {
   RATE_LIMITER?: RateLimit;
   /** Comma-separated bearer tokens. When unset or empty, the endpoint is public. */
   API_KEYS?: string;
@@ -85,11 +85,11 @@ async function enforceAccess(request: Request, env: CountEnv): Promise<Response 
   return null;
 }
 
-async function readBody(request: Request): Promise<Uint8Array | "too_large" | "invalid_length"> {
+async function readBody(request: Request, maxBodyBytes: number): Promise<Uint8Array | "too_large" | "invalid_length"> {
   const declared = request.headers.get("content-length");
   if (declared !== null) {
     if (!/^\d+$/.test(declared)) return "invalid_length";
-    if (Number(declared) > MAX_BODY_BYTES) return "too_large";
+    if (Number(declared) > maxBodyBytes) return "too_large";
   }
   if (!request.body) return new Uint8Array();
 
@@ -101,7 +101,7 @@ async function readBody(request: Request): Promise<Uint8Array | "too_large" | "i
     if (done) break;
     if (!value) continue;
     total += value.byteLength;
-    if (total > MAX_BODY_BYTES) {
+    if (total > maxBodyBytes) {
       await reader.cancel();
       return "too_large";
     }
@@ -142,10 +142,11 @@ export async function handleCount(request: Request, env: CountEnv = {}, options?
   const denied = await enforceAccess(request, env);
   if (denied) return denied;
 
-  const bodyBytes = await readBody(request);
+  const limits = resolveRequestLimits(env);
+  const bodyBytes = await readBody(request, limits.maxBodyBytes);
   if (bodyBytes === "invalid_length") return error(400, "invalid content-length", "invalid_request_error");
   if (bodyBytes === "too_large") {
-    return error(413, `request body exceeds ${MAX_BODY_BYTES} bytes`, "request_too_large");
+    return error(413, `request body exceeds ${limits.maxBodyBytes} bytes`, "request_too_large");
   }
 
   let payload: unknown;
@@ -173,8 +174,8 @@ export async function handleCount(request: Request, env: CountEnv = {}, options?
     return error(500, "failed to render prompt", "internal_error");
   }
 
-  if (encoder.encode(prompt).byteLength > model.maxPromptBytes) {
-    return error(413, `rendered prompt exceeds ${model.maxPromptBytes} bytes`, "request_too_large");
+  if (encoder.encode(prompt).byteLength > limits.maxPromptBytes) {
+    return error(413, `rendered prompt exceeds ${limits.maxPromptBytes} bytes`, "request_too_large");
   }
 
   try {

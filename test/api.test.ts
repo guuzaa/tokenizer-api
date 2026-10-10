@@ -5,7 +5,24 @@ import { models } from "../src/models/runtime";
 function handleCount(request: Request, countTokens: (text: string) => number, env: CountEnv = {}): Promise<Response> {
   return dispatchCount(request, env, { countTokens });
 }
-import { MAX_BODY_BYTES, MAX_PROMPT_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "../src/limits";
+import { encodeMessages } from "../src/encoding/deepseek-v4";
+import {
+  BODY_SLACK_BYTES,
+  MAX_BODY_BYTES,
+  MAX_PROMPT_BYTES,
+  PROMPT_TEMPLATE_BYTES,
+  RATE_LIMIT_PERIOD_SECONDS,
+  minimumBodyBytes,
+  resolveRequestLimits,
+} from "../src/limits";
+
+const textEncoder = new TextEncoder();
+
+function userPromptBytes(content: string): number {
+  return textEncoder.encode(
+    encodeMessages([{ role: "user", content }], { thinkingMode: "chat", dropThinking: true, addDefaultBosToken: true }),
+  ).byteLength;
+}
 
 function post(body: unknown, headers?: HeadersInit): Request {
   const payload = typeof body === "string" ? body : JSON.stringify(body);
@@ -112,6 +129,56 @@ test("rejects a body over the byte cap before counting", async () => {
     },
   );
   expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({
+    error: { message: `request body exceeds ${MAX_BODY_BYTES} bytes`, type: "request_too_large" },
+  });
+});
+
+test("rejects a non-JSON body over the cap before parsing", async () => {
+  const payload = `not-json${"x".repeat(MAX_BODY_BYTES)}`;
+  const response = await handleCount(
+    new Request("http://tokenizer.test/v1/token/count", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(textEncoder.encode(payload).byteLength) },
+      body: payload,
+    }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({
+    error: { message: `request body exceeds ${MAX_BODY_BYTES} bytes`, type: "request_too_large" },
+  });
+});
+
+test("accepts a body at the cap and rejects one byte more", async () => {
+  const core = JSON.stringify({ model: "deepseek-v4", messages: [{ role: "user", content: "hi" }] });
+  const coreBytes = textEncoder.encode(core).byteLength;
+  const atCap = core + " ".repeat(MAX_BODY_BYTES - coreBytes);
+  expect(textEncoder.encode(atCap).byteLength).toBe(MAX_BODY_BYTES);
+  const allowed = await handleCount(
+    new Request("http://tokenizer.test/v1/token/count", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(MAX_BODY_BYTES) },
+      body: atCap,
+    }),
+    () => 2,
+  );
+  expect(allowed.status).toBe(200);
+
+  const over = `${atCap} `;
+  const denied = await handleCount(
+    new Request("http://tokenizer.test/v1/token/count", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": String(textEncoder.encode(over).byteLength) },
+      body: over,
+    }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(denied.status).toBe(413);
 });
 
 test("rejects a rendered prompt over the cap before counting", async () => {
@@ -125,6 +192,98 @@ test("rejects a rendered prompt over the cap before counting", async () => {
     },
   );
   expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({
+    error: { message: `rendered prompt exceeds ${MAX_PROMPT_BYTES} bytes`, type: "request_too_large" },
+  });
+});
+
+test("accepts a rendered prompt at the cap and a unicode-escaped body of that prompt", async () => {
+  expect(userPromptBytes("")).toBe(PROMPT_TEMPLATE_BYTES);
+  const content = "7".repeat(MAX_PROMPT_BYTES - PROMPT_TEMPLATE_BYTES);
+  expect(userPromptBytes(content)).toBe(MAX_PROMPT_BYTES);
+  const atCap = await handleCount(post({ model: "deepseek-v4", messages: [{ role: "user", content }] }), () => 2);
+  expect(atCap.status).toBe(200);
+
+  const oneOver = await handleCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: `${content}7` }] }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(oneOver.status).toBe(413);
+
+  const escaped = `{"model":"deepseek-v4","messages":[{"role":"user","content":"${content.replaceAll("7", "\\u0037")}"}]}`;
+  expect(textEncoder.encode(escaped).byteLength).toBeLessThanOrEqual(MAX_BODY_BYTES);
+  const parsed = await handleCount(
+    new Request("http://tokenizer.test/v1/token/count", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: escaped,
+    }),
+    () => 2,
+  );
+  expect(parsed.status).toBe(200);
+});
+
+test("request limit vars override the defaults and invalid values fall back", async () => {
+  expect(minimumBodyBytes(MAX_PROMPT_BYTES)).toBeLessThanOrEqual(MAX_BODY_BYTES);
+  expect(MAX_BODY_BYTES).toBeLessThanOrEqual(minimumBodyBytes(MAX_PROMPT_BYTES) + BODY_SLACK_BYTES);
+  expect(resolveRequestLimits({ MAX_PROMPT_BYTES: "8192", MAX_BODY_BYTES: "49152" })).toEqual({
+    maxPromptBytes: 8192,
+    maxBodyBytes: 49152,
+  });
+  expect(resolveRequestLimits({ MAX_PROMPT_BYTES: "131072", MAX_BODY_BYTES: "786432" })).toEqual({
+    maxPromptBytes: 131072,
+    maxBodyBytes: 786432,
+  });
+  expect(resolveRequestLimits({}).maxPromptBytes).toBe(MAX_PROMPT_BYTES);
+
+  const raisedPrompt = 16 * 1024;
+  const raised = {
+    MAX_PROMPT_BYTES: String(raisedPrompt),
+    MAX_BODY_BYTES: String(minimumBodyBytes(raisedPrompt)),
+  };
+  const raisedContent = "c".repeat(raisedPrompt - PROMPT_TEMPLATE_BYTES);
+  expect(userPromptBytes(raisedContent)).toBeGreaterThan(MAX_PROMPT_BYTES);
+  const allowed = await handleCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: raisedContent }] }),
+    () => 2,
+    raised,
+  );
+  expect(allowed.status).toBe(200);
+
+  const lowered = await handleCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: "c".repeat(4096 - PROMPT_TEMPLATE_BYTES + 1) }] }),
+    () => {
+      throw new Error("should not count");
+    },
+    { MAX_PROMPT_BYTES: 4096, MAX_BODY_BYTES: minimumBodyBytes(4096) + 100 },
+  );
+  expect(lowered.status).toBe(413);
+  expect(await lowered.json()).toEqual({
+    error: { message: "rendered prompt exceeds 4096 bytes", type: "request_too_large" },
+  });
+
+  const invalid = await handleCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: "c".repeat(MAX_PROMPT_BYTES - PROMPT_TEMPLATE_BYTES + 1) }] }),
+    () => {
+      throw new Error("should not count");
+    },
+    { MAX_PROMPT_BYTES: "nope", MAX_BODY_BYTES: "0" },
+  );
+  expect(invalid.status).toBe(413);
+  expect(await invalid.json()).toEqual({
+    error: { message: `rendered prompt exceeds ${MAX_PROMPT_BYTES} bytes`, type: "request_too_large" },
+  });
+
+  const inconsistent = await handleCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: raisedContent }] }),
+    () => {
+      throw new Error("should not count");
+    },
+    { MAX_PROMPT_BYTES: String(raisedPrompt), MAX_BODY_BYTES: "20000" },
+  );
+  expect(inconsistent.status).toBe(413);
 });
 
 function limiter(allow: number): { env: CountEnv; keys: string[] } {

@@ -50,7 +50,26 @@ Other roles: `system`, `developer`, `user`, `assistant`, and `latest_reminder`.
 
 ### Limits
 
-The raw JSON body must be at most 16 KiB. The rendered prompt must be at most 4 KiB. Over either cap, the response is 413.
+The free-plan defaults keep a worst-case request under the 10 ms CPU limit. The raw JSON body must be at most 48 KiB (`49152` bytes). The rendered prompt must be at most 8 KiB (`8192` bytes). Over either cap, the response is 413 `request_too_large`, and the tokenizer does not run. A body over the cap is rejected before `JSON.parse`. A prompt over the cap is rejected after the template is rendered and before tokenization.
+
+A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (66 bytes around an empty user message).
+
+Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). Unset vars use the defaults above. A value that is not a positive integer, a prompt outside 1024–131072 bytes, or a body that is not within 4096 bytes above the escaping minimum for that prompt, is ignored and the defaults are used.
+
+Wasm memory stays about 58 MiB through an 8 KiB prompt and about 62 MiB at 128 KiB. A 1 MiB prompt with no whitespace grew it to about 133 MiB, past the 128 MiB isolate limit, so vars cannot select a prompt above 128 KiB.
+
+On the Workers Paid plan the default CPU limit is 30 seconds and `limits.cpu_ms` can raise it up to 5 minutes. Do not set `limits.cpu_ms` on the free plan; that configuration is rejected. A 128 KiB digit run measured about 90 ms (max 95 ms) in workerd. A paid deploy can raise the caps and set the CPU limit above that measurement:
+
+```toml
+[vars]
+MAX_PROMPT_BYTES = "131072"
+MAX_BODY_BYTES = "786432"
+
+[limits]
+cpu_ms = 200
+```
+
+`786432` is 768 KiB, enough for a `\uXXXX` encoding of a 128 KiB prompt. The isolate encodes a max-size digit run four times at startup so the first request does not pay the one-time cost. That stays inside the 1 second startup limit.
 
 ### Errors
 

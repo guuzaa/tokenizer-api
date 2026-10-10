@@ -16,6 +16,13 @@ namespace_id = "1001"
   limit = 60
   period = 60
 
+# Free-plan caps. See the README for a paid-plan example. Do not set
+# [limits] cpu_ms here: the free plan rejects a configured CPU limit.
+# MAX_BODY_BYTES must cover a `\uXXXX` encoding of a MAX_PROMPT_BYTES prompt.
+[vars]
+MAX_PROMPT_BYTES = "8192"
+MAX_BODY_BYTES = "49152"
+
 # Optional bearer tokens. Leave unset to keep the endpoint public.
 # Comma-separated. Do not put the value in this file.
 #   wrangler secret put API_KEYS
