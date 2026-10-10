@@ -1,7 +1,13 @@
 import { encodeMessages, EncodeError, type ChatMessage, type ReasoningEffort, type ThinkingMode } from "./encoding/deepseek-v4";
-import { MAX_BODY_BYTES, MAX_PROMPT_BYTES } from "./limits";
+import { MAX_BODY_BYTES, MAX_PROMPT_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "./limits";
 
 export type CountFn = (text: string) => number;
+
+export interface CountEnv {
+  RATE_LIMITER?: RateLimit;
+  /** Comma-separated bearer tokens. When unset or empty, the endpoint is public. */
+  API_KEYS?: string;
+}
 
 const encoder = new TextEncoder();
 
@@ -12,8 +18,68 @@ function json(body: unknown, status: number, extraHeaders?: HeadersInit): Respon
   });
 }
 
-function error(status: number, message: string, type: string): Response {
-  return json({ error: { message, type } }, status);
+function error(status: number, message: string, type: string, extraHeaders?: HeadersInit): Response {
+  return json({ error: { message, type } }, status, extraHeaders);
+}
+
+function configuredApiKeys(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw.split(",").map((key) => key.trim()).filter((key) => key.length > 0);
+}
+
+function bearerToken(request: Request): string | null {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+async function sha256(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+}
+
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
+}
+
+async function tokenMatches(token: string, keys: string[]): Promise<boolean> {
+  const given = await sha256(token);
+  let matched = false;
+  for (const key of keys) {
+    if (equalBytes(given, await sha256(key))) matched = true;
+  }
+  return matched;
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function rateLimitKey(request: Request, authedToken: string | null): Promise<string> {
+  if (authedToken) return `key:${hex(await sha256(authedToken))}`;
+  const ip = request.headers.get("CF-Connecting-IP");
+  return `ip:${ip && ip.length > 0 ? ip : "unknown"}`;
+}
+
+async function enforceAccess(request: Request, env: CountEnv): Promise<Response | null> {
+  const keys = configuredApiKeys(env.API_KEYS);
+  const presented = bearerToken(request);
+  const authed = keys.length > 0 && presented && (await tokenMatches(presented, keys)) ? presented : null;
+
+  if (env.RATE_LIMITER) {
+    const { success } = await env.RATE_LIMITER.limit({ key: await rateLimitKey(request, authed) });
+    if (!success) {
+      return error(429, "rate limit exceeded", "rate_limit_error", {
+        "retry-after": String(RATE_LIMIT_PERIOD_SECONDS),
+      });
+    }
+  }
+
+  if (keys.length > 0 && !authed) return error(401, "invalid api key", "authentication_error");
+  return null;
 }
 
 function isDeepseekV4Model(model: string): boolean {
@@ -92,7 +158,7 @@ function readOptions(body: Record<string, unknown>): {
   };
 }
 
-export async function handleCount(request: Request, countTokens: CountFn): Promise<Response> {
+export async function handleCount(request: Request, countTokens: CountFn, env: CountEnv = {}): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname !== "/v1/token/count") {
     return error(404, "not found", "not_found");
@@ -100,6 +166,9 @@ export async function handleCount(request: Request, countTokens: CountFn): Promi
   if (request.method !== "POST") {
     return error(405, "method not allowed", "method_not_allowed", );
   }
+
+  const denied = await enforceAccess(request, env);
+  if (denied) return denied;
 
   const bodyBytes = await readBody(request);
   if (bodyBytes === "invalid_length") return error(400, "invalid content-length", "invalid_request_error");

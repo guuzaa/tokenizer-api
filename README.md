@@ -61,10 +61,28 @@ The raw JSON body must be at most 16 KiB. The rendered prompt must be at most 4 
 | Status | `type` |
 | --- | --- |
 | 400 | `invalid_request_error` |
+| 401 | `authentication_error` |
 | 404 | `not_found` |
 | 405 | `method_not_allowed` |
 | 413 | `request_too_large` |
+| 429 | `rate_limit_error` |
 | 500 | `internal_error` |
+
+A 429 includes `Retry-After: 60`.
+
+### Access
+
+The endpoint is public unless the `API_KEYS` secret is set.
+
+Each caller may send 60 requests per 60 seconds. The [Workers Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) enforces that per Cloudflare location, not as one global counter. Public requests are keyed on `CF-Connecting-IP`. Requests with no such header share an `unknown` bucket. A request with a valid API key is keyed on a hash of that key, so callers behind one shared IP are not mixed together.
+
+To require a key, set `API_KEYS` to a comma-separated list of bearer tokens. Do not commit the value.
+
+```bash
+wrangler secret put API_KEYS
+```
+
+Then send `Authorization: Bearer <token>`. A missing or unknown token is 401. With no `API_KEYS` secret, the endpoint stays public. The limit and the binding name are in `wrangler.toml`.
 
 ## Develop
 

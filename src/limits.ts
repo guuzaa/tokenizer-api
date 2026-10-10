@@ -11,3 +11,9 @@ export const MAX_BODY_BYTES = 16 * 1024;
  * CPUs are slower, so 4 KiB is the cap that still leaves room under 10ms.
  */
 export const MAX_PROMPT_BYTES = 4 * 1024;
+
+/**
+ * Retry-After on a 429. Must match `ratelimits.simple.period` in wrangler.toml.
+ * The binding enforces `limit` and does not return the window.
+ */
+export const RATE_LIMIT_PERIOD_SECONDS = 60;
