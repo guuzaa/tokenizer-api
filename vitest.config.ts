@@ -1,21 +1,40 @@
 import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import { defineConfig } from "vitest/config";
+import { defineConfig, type Plugin } from "vitest/config";
+
+/** Node tests import the wasm module directly. Wrangler compiles it for the worker bundle. */
+function wasmModulePlugin(): Plugin {
+  return {
+    name: "wasm-module",
+    enforce: "pre",
+    load(id) {
+      if (!id.endsWith(".wasm")) return null;
+      const bytes = readFileSync(id);
+      return `const bytes = Uint8Array.from(atob(${JSON.stringify(bytes.toString("base64"))}), (char) => char.charCodeAt(0));
+export default new WebAssembly.Module(bytes);`;
+    },
+  };
+}
 
 const root = dirname(fileURLToPath(import.meta.url));
 const bundleDir = join(root, "test/.bundle");
 
-function bundleApiWorker(): string {
+function bundleApiWorker(): { scriptPath: string; wasmPath: string } {
+  rmSync(bundleDir, { recursive: true, force: true });
   execFileSync(join(root, "node_modules/wrangler/bin/wrangler.js"), ["deploy", "--dry-run", "--outdir", bundleDir], {
     cwd: root,
     stdio: "inherit",
   });
-  return join(bundleDir, "index.js");
+  const wasmName = readdirSync(bundleDir).find((name) => name.endsWith(".wasm"));
+  if (wasmName == null) throw new Error("wrangler bundle is missing the tokenizer wasm module");
+  return { scriptPath: join(bundleDir, "index.js"), wasmPath: join(bundleDir, wasmName) };
 }
 
 export default defineConfig({
+  plugins: [wasmModulePlugin()],
   test: {
     testTimeout: 120_000,
     projects: [
@@ -30,7 +49,7 @@ export default defineConfig({
       {
         plugins: [
           cloudflareTest(async () => {
-            const scriptPath = bundleApiWorker();
+            const { scriptPath, wasmPath } = bundleApiWorker();
             return {
               main: join(root, "test/worker-entry.ts"),
               miniflare: {
@@ -39,8 +58,11 @@ export default defineConfig({
                 workers: [
                   {
                     name: "token-count",
-                    scriptPath,
-                    modules: true,
+                    modules: [
+                      { type: "ESModule", path: scriptPath },
+                      { type: "CompiledWasm", path: wasmPath },
+                    ],
+                    modulesRoot: bundleDir,
                     compatibilityDate: "2026-10-09",
                     ratelimits: {
                       RATE_LIMITER: {

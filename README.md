@@ -70,6 +70,14 @@ The raw JSON body must be at most 16 KiB. The rendered prompt must be at most 4 
 
 A 429 includes `Retry-After: 60`.
 
+An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the Rust `tokenizers` crate, and a Rust string cannot hold that value. Well-formed text, including emoji, is counted.
+
+### Tokenizer
+
+Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
+
+The wasm module is built, not committed. `bun run test`, `bun run check`, `bun run dev`, and `bun run deploy` run that build first.
+
 ### Access
 
 The endpoint is public unless the `API_KEYS` secret is set.
@@ -95,4 +103,4 @@ bun run check
 
 Installs use `registry.npmjs.org` (`bunfig.toml`).
 
-`bun run test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`).
+`bun run test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`). Those commands need Rust, the `wasm32-unknown-unknown` target, and `wasm-bindgen` 0.2.129. `scripts/build-wasm.sh` installs that `wasm-bindgen` release if it is missing. CI installs the Rust toolchain before the tests.

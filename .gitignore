@@ -3,6 +3,10 @@ node_modules
 dist
 *.cpuprofile
 test/.bundle
+test/.bench-bundle
+bench/.wrangler
+tokenizer-wasm/target
+tokenizer-wasm/pkg
 
 __pycache__/
 .DS_Store

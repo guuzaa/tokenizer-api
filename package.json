@@ -11,15 +11,13 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "test": "vitest run",
-    "bench": "bun run bench/encode.ts",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "dev": "bun run build:wasm && wrangler dev",
+    "deploy": "bun run build:wasm && wrangler deploy",
+    "test": "bun run build:wasm && vitest run",
+    "bench": "bun run bench/workerd.mjs",
     "types": "wrangler types",
-    "check": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@huggingface/tokenizers": "^0.2.0"
+    "check": "bun run build:wasm && tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.0",

@@ -1,4 +1,5 @@
 import { EncodeError } from "./encoding/deepseek-v4";
+import { TokenizerInputError } from "./tokenizer";
 import { MAX_BODY_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "./limits";
 import { modelFamilies, resolveModel } from "./models/registry";
 import type { CountFn, Model, ModelFamily } from "./models/types";
@@ -180,6 +181,7 @@ export async function handleCount(request: Request, env: CountEnv = {}, options?
     const totalTokens = counterFor(model, options?.countTokens)(prompt);
     return json({ data: { total_tokens: totalTokens } }, 200);
   } catch (err) {
+    if (err instanceof TokenizerInputError) return error(400, err.message, "invalid_request_error");
     console.error(JSON.stringify({ message: "token count failed", error: err instanceof Error ? err.message : String(err) }));
     return error(500, "failed to count tokens", "internal_error");
   }

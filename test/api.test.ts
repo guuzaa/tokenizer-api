@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { handleCount as dispatchCount, type CountEnv } from "../src/handle";
+import { models } from "../src/models/runtime";
 
 function handleCount(request: Request, countTokens: (text: string) => number, env: CountEnv = {}): Promise<Response> {
   return dispatchCount(request, env, { countTokens });
@@ -35,6 +36,18 @@ test("returns the counter result for a deepseek-v4 chat", async () => {
   expect(seen).toContain("<｜begin▁of▁sentence｜>");
   expect(seen).toContain("<｜User｜>你好");
   expect(seen.endsWith("<｜Assistant｜></think>")).toBe(true);
+});
+
+test("rejects an unpaired surrogate before counting", async () => {
+  const response = await dispatchCount(
+    post({ model: "deepseek-v4", messages: [{ role: "user", content: "\uD800" }] }),
+    {},
+    { models },
+  );
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: { message: "text contains an unpaired surrogate", type: "invalid_request_error" },
+  });
 });
 
 test("rejects an unknown model", async () => {
