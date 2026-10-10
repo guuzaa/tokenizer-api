@@ -1,0 +1,30 @@
+{
+  "name": "tokenizer-api",
+  "private": true,
+  "version": "0.0.1",
+  "description": "An API for counting tokens",
+  "author": "Jowell Young <guuzaa@duck.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guuzaa/tokenizer-api"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "bench": "bun run bench/encode.ts",
+    "types": "wrangler types",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/tokenizers": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.149.0"
+  }
+}
