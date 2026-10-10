@@ -5,3 +5,4 @@ dist
 test/.bundle
 
 __pycache__/
+.DS_Store
