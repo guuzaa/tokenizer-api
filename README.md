@@ -21,7 +21,7 @@ curl http://localhost:8787/v1/token/count \
 ```
 
 ```json
-{ "data": { "total_tokens": 12 } }
+{ "data": { "total_tokens": 11 } }
 ```
 
 `model` must be `deepseek-v4` or start with `deepseek-v4-`. Message `content` must be text. `thinking_mode` is `chat` (default) or `thinking`.

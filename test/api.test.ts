@@ -23,11 +23,11 @@ test("returns the counter result for a deepseek-v4 chat", async () => {
     }),
     (prompt) => {
       seen = prompt;
-      return 12;
+      return 7;
     },
   );
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ data: { total_tokens: 12 } });
+  expect(await response.json()).toEqual({ data: { total_tokens: 7 } });
   expect(seen).toContain("<｜begin▁of▁sentence｜>");
   expect(seen).toContain("<｜User｜>你好");
   expect(seen.endsWith("<｜Assistant｜></think>")).toBe(true);
