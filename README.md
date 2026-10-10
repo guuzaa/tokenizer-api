@@ -90,4 +90,9 @@ Then send `Authorization: Bearer <token>`. A missing or unknown token is 401. Wi
 bun install
 bun run dev
 bun run test
+bun run check
 ```
+
+Installs use `registry.npmjs.org` (`bunfig.toml`).
+
+`bun run test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`).
