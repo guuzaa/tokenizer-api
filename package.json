@@ -10,14 +10,15 @@
     "url": "https://github.com/guuzaa/tokenizer-api"
   },
   "type": "module",
+  "packageManager": "pnpm@12.10.1",
   "scripts": {
     "build:wasm": "bash scripts/build-wasm.sh",
-    "dev": "bun run build:wasm && wrangler dev",
-    "deploy": "bun run build:wasm && wrangler deploy",
-    "test": "bun run build:wasm && vitest run",
-    "bench": "bun run bench/workerd.mjs",
+    "dev": "pnpm build:wasm && wrangler dev",
+    "deploy": "pnpm build:wasm && wrangler deploy",
+    "test": "pnpm build:wasm && vitest run",
+    "bench": "pnpm build:wasm && node bench/workerd.mjs",
     "types": "wrangler types",
-    "check": "bun run build:wasm && tsc --noEmit"
+    "check": "pnpm build:wasm && tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.0",

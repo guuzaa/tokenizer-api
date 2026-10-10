@@ -76,7 +76,7 @@ An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the R
 
 Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
 
-The wasm module is built, not committed. `bun run test`, `bun run check`, `bun run dev`, and `bun run deploy` run that build first.
+The wasm module is built, not committed. `pnpm test`, `pnpm check`, `pnpm dev`, and `pnpm deploy` run that build first.
 
 ### Access
 
@@ -95,12 +95,12 @@ Then send `Authorization: Bearer <token>`. A missing or unknown token is 401. Wi
 ## Develop
 
 ```bash
-bun install
-bun run dev
-bun run test
-bun run check
+pnpm install
+pnpm dev
+pnpm test
+pnpm check
 ```
 
-Installs use `registry.npmjs.org` (`bunfig.toml`).
+Installs use `registry.npmjs.org` (`.npmrc`). The package manager is pnpm 12 (`packageManager` in `package.json`).
 
-`bun run test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`). Those commands need Rust, the `wasm32-unknown-unknown` target, and `wasm-bindgen` 0.2.129. `scripts/build-wasm.sh` installs that `wasm-bindgen` release if it is missing. CI installs the Rust toolchain before the tests.
+`pnpm test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`). Those commands need Rust, the `wasm32-unknown-unknown` target, and `wasm-bindgen` 0.2.129. `scripts/build-wasm.sh` installs that `wasm-bindgen` release if it is missing. CI installs the Rust toolchain before the tests.

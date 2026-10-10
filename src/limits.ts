@@ -6,7 +6,7 @@ export const MAX_BODY_BYTES = 16 * 1024;
 
 /**
  * Reject the rendered prompt before BPE.
- * Local medians after warmup (Bun, this machine): 4 KiB of repeated ASCII
+ * Local medians after warmup on this machine: 4 KiB of repeated ASCII
  * encodes in about 3ms; 8 KiB in about 5ms, with spikes over 10ms. Cloudflare
  * CPUs are slower, so 4 KiB is the cap that still leaves room under 10ms.
  */
