@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { handleCount, type CountEnv } from "../src/handle";
+import { handleCount as dispatchCount, type CountEnv } from "../src/handle";
+
+function handleCount(request: Request, countTokens: (text: string) => number, env: CountEnv = {}): Promise<Response> {
+  return dispatchCount(request, env, { countTokens });
+}
 import { MAX_BODY_BYTES, MAX_PROMPT_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "../src/limits";
 
 function post(body: unknown, headers?: HeadersInit): Request {

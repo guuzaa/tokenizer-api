@@ -1,8 +1,8 @@
 import { handleCount } from "./handle";
-import { countTokens } from "./tokenizer";
+import { models } from "./models/runtime";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return handleCount(request, countTokens, env);
+    return handleCount(request, env, { models });
   },
 } satisfies ExportedHandler<Env>;
