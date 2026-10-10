@@ -655,7 +655,6 @@ dependencies = [
  "console_error_panic_hook",
  "getrandom",
  "js-sys",
- "serde_json",
  "tokenizers",
  "wasm-bindgen",
 ]
