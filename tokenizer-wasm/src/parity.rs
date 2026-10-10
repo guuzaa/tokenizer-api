@@ -15,12 +15,18 @@ fn main() {
 
     let sample = "你好，请用一句话介绍深度求索。".repeat(120);
     let started = Instant::now();
-    let fast = tokenizer.encode_fast(sample.as_str(), false).expect("encode_fast");
+    let fast = tokenizer
+        .encode_fast(sample.as_str(), false)
+        .expect("encode_fast");
     let full = tokenizer.encode(sample.as_str(), false).expect("encode");
-    eprintln!("encode_fast_ms {}", started.elapsed().as_secs_f64() * 1000.0);
+    eprintln!(
+        "encode_fast_ms {}",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
     eprintln!("ids_match {}", fast.get_ids() == full.get_ids());
 
-    let cases: Vec<String> = serde_json::from_str(&fs::read_to_string(&cases_path).expect("cases")).expect("cases json");
+    let cases: Vec<String> =
+        serde_json::from_str(&fs::read_to_string(&cases_path).expect("cases")).expect("cases json");
     let mut out = Vec::with_capacity(cases.len());
     for text in &cases {
         match tokenizer.encode_fast(text.as_str(), false) {

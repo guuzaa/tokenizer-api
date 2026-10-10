@@ -16,11 +16,14 @@ fi
 
 if ! command -v wasm-bindgen >/dev/null 2>&1 || [[ "$(wasm-bindgen --version)" != *"${bindgen_version}"* ]]; then
   machine="$(uname -m)"
-  case "${machine}" in
-    x86_64) target_triple="x86_64-unknown-linux-musl" ;;
-    aarch64|arm64) target_triple="aarch64-unknown-linux-musl" ;;
+  os="$(uname -s)"
+  case "${os}:${machine}" in
+    Linux:x86_64) target_triple="x86_64-unknown-linux-musl" ;;
+    Linux:aarch64|Linux:arm64) target_triple="aarch64-unknown-linux-musl" ;;
+    Darwin:x86_64) target_triple="x86_64-apple-darwin" ;;
+    Darwin:aarch64|Darwin:arm64) target_triple="aarch64-apple-darwin" ;;
     *)
-      echo "no wasm-bindgen binary for ${machine}; install wasm-bindgen ${bindgen_version} yourself" >&2
+      echo "no wasm-bindgen binary for ${os} ${machine}; install wasm-bindgen ${bindgen_version} yourself" >&2
       exit 1
       ;;
   esac

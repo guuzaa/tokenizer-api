@@ -22,7 +22,10 @@ mod random {
     }
 
     #[no_mangle]
-    unsafe extern "Rust" fn __getrandom_v03_custom(dest: *mut u8, len: usize) -> Result<(), getrandom::Error> {
+    unsafe extern "Rust" fn __getrandom_v03_custom(
+        dest: *mut u8,
+        len: usize,
+    ) -> Result<(), getrandom::Error> {
         if fill(dest, len).is_err() {
             for index in 0..len {
                 unsafe { dest.add(index).write(0xA5 ^ (index as u8)) };
