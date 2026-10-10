@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { encodeMessages, type ChatMessage, type EncodeOptions } from "../src/encoding/deepseek-v4";
-import { countTokens } from "../src/tokenizer";
+import { countTokens } from "../src/models/deepseek-v4-tokenizer";
 
 function count(messages: ChatMessage[], options: Partial<EncodeOptions> = {}): number {
   const prompt = encodeMessages(messages, { thinkingMode: "chat", ...options });

@@ -1,6 +1,4 @@
 import { Tokenizer } from "@huggingface/tokenizers";
-import tokenizerConfig from "../config/deepseek-v4/tokenizer_config.json";
-import tokenizerJson from "../config/deepseek-v4/tokenizer.json";
 
 export interface TokenCounter {
   encodeIds(text: string): number[];
@@ -17,14 +15,4 @@ export function createTokenCounter(json: Record<string, unknown>, config: Record
       return encodeIds(text).length;
     },
   };
-}
-
-const deepseekV4 = createTokenCounter(tokenizerJson, tokenizerConfig);
-
-export function encodeIds(text: string): number[] {
-  return deepseekV4.encodeIds(text);
-}
-
-export function countTokens(text: string): number {
-  return deepseekV4.countTokens(text);
 }
