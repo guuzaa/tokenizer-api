@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "description": "An API for counting tokens",
-  "author": "Jowell Young <guuzaa@duck.com>",
+  "author": "Jowell Young <guza@duck.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,6 +22,7 @@
     "@huggingface/tokenizers": "^0.2.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.0",
     "@types/node": "^26.6.4",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",

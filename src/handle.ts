@@ -1,7 +1,15 @@
-import { encodeMessages, EncodeError, type ChatMessage, type ReasoningEffort, type ThinkingMode } from "./encoding/deepseek-v4";
-import { MAX_BODY_BYTES, MAX_PROMPT_BYTES } from "./limits";
+import { EncodeError } from "./encoding/deepseek-v4";
+import { MAX_BODY_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "./limits";
+import { modelFamilies, resolveModel } from "./models/registry";
+import type { CountFn, Model, ModelFamily } from "./models/types";
 
-export type CountFn = (text: string) => number;
+export type { CountFn };
+
+export interface CountEnv {
+  RATE_LIMITER?: RateLimit;
+  /** Comma-separated bearer tokens. When unset or empty, the endpoint is public. */
+  API_KEYS?: string;
+}
 
 const encoder = new TextEncoder();
 
@@ -12,12 +20,68 @@ function json(body: unknown, status: number, extraHeaders?: HeadersInit): Respon
   });
 }
 
-function error(status: number, message: string, type: string): Response {
-  return json({ error: { message, type } }, status);
+function error(status: number, message: string, type: string, extraHeaders?: HeadersInit): Response {
+  return json({ error: { message, type } }, status, extraHeaders);
 }
 
-function isDeepseekV4Model(model: string): boolean {
-  return model === "deepseek-v4" || model.startsWith("deepseek-v4-");
+function configuredApiKeys(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw.split(",").map((key) => key.trim()).filter((key) => key.length > 0);
+}
+
+function bearerToken(request: Request): string | null {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+async function sha256(value: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+}
+
+function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
+}
+
+async function tokenMatches(token: string, keys: string[]): Promise<boolean> {
+  const given = await sha256(token);
+  let matched = false;
+  for (const key of keys) {
+    if (equalBytes(given, await sha256(key))) matched = true;
+  }
+  return matched;
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function rateLimitKey(request: Request, authedToken: string | null): Promise<string> {
+  if (authedToken) return `key:${hex(await sha256(authedToken))}`;
+  const ip = request.headers.get("CF-Connecting-IP");
+  return `ip:${ip && ip.length > 0 ? ip : "unknown"}`;
+}
+
+async function enforceAccess(request: Request, env: CountEnv): Promise<Response | null> {
+  const keys = configuredApiKeys(env.API_KEYS);
+  const presented = bearerToken(request);
+  const authed = keys.length > 0 && presented && (await tokenMatches(presented, keys)) ? presented : null;
+
+  if (env.RATE_LIMITER) {
+    const { success } = await env.RATE_LIMITER.limit({ key: await rateLimitKey(request, authed) });
+    if (!success) {
+      return error(429, "rate limit exceeded", "rate_limit_error", {
+        "retry-after": String(RATE_LIMIT_PERIOD_SECONDS),
+      });
+    }
+  }
+
+  if (keys.length > 0 && !authed) return error(401, "invalid api key", "authentication_error");
+  return null;
 }
 
 async function readBody(request: Request): Promise<Uint8Array | "too_large" | "invalid_length"> {
@@ -52,47 +116,20 @@ async function readBody(request: Request): Promise<Uint8Array | "too_large" | "i
   return out;
 }
 
-function assertTextMessages(messages: ChatMessage[]): void {
-  messages.forEach((message, index) => {
-    if (message == null || typeof message !== "object" || Array.isArray(message)) {
-      throw new EncodeError(`message ${index} must be an object`);
-    }
-    if (message.role === "tool") return;
-    if (message.content != null && typeof message.content !== "string") {
-      throw new EncodeError(`message ${index} content must be a string`);
-    }
-  });
+export interface HandleOptions {
+  /** Wired families. The worker passes these from `src/models/runtime.ts`. */
+  models?: readonly Model[];
+  /** Replaces the matched model's counter. Unit tests use this so they do not load a tokenizer. */
+  countTokens?: CountFn;
 }
 
-function readOptions(body: Record<string, unknown>): {
-  thinkingMode: ThinkingMode;
-  dropThinking: boolean;
-  addDefaultBosToken: boolean;
-  reasoningEffort: ReasoningEffort | null;
-} {
-  const thinkingMode = body.thinking_mode ?? "chat";
-  if (thinkingMode !== "chat" && thinkingMode !== "thinking") {
-    throw new EncodeError("thinking_mode must be \"chat\" or \"thinking\"");
-  }
-  if (body.drop_thinking != null && typeof body.drop_thinking !== "boolean") {
-    throw new EncodeError("drop_thinking must be a boolean");
-  }
-  if (body.add_default_bos_token != null && typeof body.add_default_bos_token !== "boolean") {
-    throw new EncodeError("add_default_bos_token must be a boolean");
-  }
-  const reasoningEffort = body.reasoning_effort ?? null;
-  if (reasoningEffort != null && reasoningEffort !== "max" && reasoningEffort !== "high") {
-    throw new EncodeError("reasoning_effort must be \"max\", \"high\", or null");
-  }
-  return {
-    thinkingMode,
-    dropThinking: typeof body.drop_thinking === "boolean" ? body.drop_thinking : true,
-    addDefaultBosToken: typeof body.add_default_bos_token === "boolean" ? body.add_default_bos_token : true,
-    reasoningEffort,
-  };
+function counterFor(model: ModelFamily | Model, override?: CountFn): CountFn {
+  if (override) return override;
+  if ("countTokens" in model) return model.countTokens;
+  throw new Error(`${model.name} tokenizer is not configured`);
 }
 
-export async function handleCount(request: Request, countTokens: CountFn): Promise<Response> {
+export async function handleCount(request: Request, env: CountEnv = {}, options?: HandleOptions): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname !== "/v1/token/count") {
     return error(404, "not found", "not_found");
@@ -100,6 +137,9 @@ export async function handleCount(request: Request, countTokens: CountFn): Promi
   if (request.method !== "POST") {
     return error(405, "method not allowed", "method_not_allowed", );
   }
+
+  const denied = await enforceAccess(request, env);
+  if (denied) return denied;
 
   const bodyBytes = await readBody(request);
   if (bodyBytes === "invalid_length") return error(400, "invalid content-length", "invalid_request_error");
@@ -120,30 +160,24 @@ export async function handleCount(request: Request, countTokens: CountFn): Promi
   if (typeof body.model !== "string" || body.model.length === 0) {
     return error(400, "model is required", "invalid_request_error");
   }
-  if (!isDeepseekV4Model(body.model)) {
-    return error(400, `unsupported model: ${body.model}`, "invalid_request_error");
-  }
-  if (!Array.isArray(body.messages) || body.messages.length === 0) {
-    return error(400, "messages must be a non-empty array", "invalid_request_error");
-  }
+  const model = resolveModel(body.model, options?.models ?? modelFamilies);
+  if (!model) return error(400, `unsupported model: ${body.model}`, "invalid_request_error");
 
   let prompt: string;
   try {
-    assertTextMessages(body.messages as ChatMessage[]);
-    const options = readOptions(body);
-    prompt = encodeMessages(body.messages as ChatMessage[], options);
+    prompt = model.render(body);
   } catch (err) {
     if (err instanceof EncodeError) return error(400, err.message, "invalid_request_error");
     console.error(JSON.stringify({ message: "token count failed", error: err instanceof Error ? err.message : String(err) }));
     return error(500, "failed to render prompt", "internal_error");
   }
 
-  if (encoder.encode(prompt).byteLength > MAX_PROMPT_BYTES) {
-    return error(413, `rendered prompt exceeds ${MAX_PROMPT_BYTES} bytes`, "request_too_large");
+  if (encoder.encode(prompt).byteLength > model.maxPromptBytes) {
+    return error(413, `rendered prompt exceeds ${model.maxPromptBytes} bytes`, "request_too_large");
   }
 
   try {
-    const totalTokens = countTokens(prompt);
+    const totalTokens = counterFor(model, options?.countTokens)(prompt);
     return json({ data: { total_tokens: totalTokens } }, 200);
   } catch (err) {
     console.error(JSON.stringify({ message: "token count failed", error: err instanceof Error ? err.message : String(err) }));

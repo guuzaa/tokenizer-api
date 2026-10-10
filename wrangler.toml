@@ -4,6 +4,22 @@ compatibility_date = "2026-10-09"
 
 routes = [{ pattern = "api.paulden.site", custom_domain = true }]
 
+# Public by default: 60 requests per 60 seconds, per Cloudflare location.
+# Public calls are keyed on CF-Connecting-IP. A valid API key is keyed on that
+# key instead. namespace_id must be a positive integer unique in this account.
+# period must be 10 or 60. Keep period in sync with RATE_LIMIT_PERIOD_SECONDS.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+# Optional bearer tokens. Leave unset to keep the endpoint public.
+# Comma-separated. Do not put the value in this file.
+#   wrangler secret put API_KEYS
+
 [observability]
 enabled = true
 

@@ -68,4 +68,24 @@ describe("encodeMessages", () => {
   test("rejects an unknown role", () => {
     expect(() => encodeMessages([{ role: "critic", content: "no" }], { thinkingMode: "chat" })).toThrow(EncodeError);
   });
+
+  test("rejects tool content that is not a string", () => {
+    expect(() =>
+      encodeMessages([{ role: "tool", tool_call_id: "call_1", content: { temperature: 22 } }], { thinkingMode: "chat" }),
+    ).toThrow(/tool content must be a string/);
+    expect(() =>
+      encodeMessages([{ role: "tool", tool_call_id: "call_1", content: 22 }], { thinkingMode: "chat" }),
+    ).toThrow(/tool content must be a string/);
+    expect(() =>
+      encodeMessages([{ role: "tool", tool_call_id: "call_1", content: null }], { thinkingMode: "chat" }),
+    ).toThrow(/tool content must be a string/);
+  });
+
+  test("renders string tool content as a tool result", () => {
+    const prompt = encodeMessages(
+      [{ role: "tool", tool_call_id: "call_1", content: "{\"temperature\": 22}" }],
+      { thinkingMode: "chat" },
+    );
+    expect(prompt).toContain("<tool_result>{\"temperature\": 22}</tool_result>");
+  });
 });
