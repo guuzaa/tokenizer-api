@@ -21,7 +21,7 @@ mod random {
         fn get_random_values(buf: &Uint8Array) -> Result<(), JsValue>;
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "Rust" fn __getrandom_v03_custom(
         dest: *mut u8,
         len: usize,
