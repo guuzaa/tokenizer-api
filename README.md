@@ -30,7 +30,7 @@ curl http://localhost:8787/v1/token/count \
 
 `messages` is a non-empty array. `content` is text.
 
-`tools` on a message is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). The schemas are written into the prompt.
+`tools` is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). A list on the request is written into the leading system message, or into a new empty system message when the conversation does not start with one. A list already present on that system message is kept. The schemas are written into the prompt.
 
 `tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus string `content`) is merged into a user turn as a `<tool_result>` block. Tool `content` must be a string, or a list of content blocks. Objects, numbers, booleans, and null are rejected: the official encoder prints those with Python's `repr`, and a JSON body cannot reproduce that exactly (`22.0` and `22` are the same number after parsing).
 
@@ -40,13 +40,13 @@ Other roles: `system`, `developer`, `user`, `assistant`, and `latest_reminder`.
 
 ### Options
 
-`thinking_mode` is `chat` (default) or `thinking`. Chat closes the turn with `</think>`. Thinking closes it with `<think>`.
+`thinking` is `{ "type": "enabled" }` or `{ "type": "disabled" }`. Enabled opens the turn with `<think>`. Disabled closes it with `</think>`. `thinking_mode` (`thinking` or `chat`) is the same switch. When both are set they must agree. The default is chat.
 
 `drop_thinking` defaults to `true`. In thinking mode, `reasoning_content` on assistant turns before the last user message is left out of the prompt. If any message has `tools`, thinking is kept.
 
 `add_default_bos_token` defaults to `true`. It prepends the BOS token at the start of the conversation.
 
-`reasoning_effort` is `max`, `high`, or `null` (default). In thinking mode, `max` prepends the "Absolute maximum..." instruction. `high` is accepted and adds nothing. That matches current DeepSeek V4 Pro and Flash. It does not match the older Flash-0731 template, where `high` and `max` are different prefixes.
+`reasoning_effort` is `low`, `medium`, `high`, `max`, `xhigh`, or `null` (default). In thinking mode, `max` and `xhigh` prepend the "Absolute maximum..." instruction. `low`, `medium`, and `high` are accepted and add nothing. That matches current DeepSeek V4 Pro and Flash, which map `low` and `medium` onto `high` and `xhigh` onto `max`. It does not match the older Flash-0731 template, where `high` and `max` are different prefixes.
 
 ### Limits
 

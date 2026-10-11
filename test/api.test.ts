@@ -47,6 +47,139 @@ test("returns the counter result for a deepseek-v4 chat", async () => {
   expect(seen.endsWith("<｜Assistant｜></think>")).toBe(true);
 });
 
+test("thinking.type enabled opens the think token", async () => {
+  let seen = "";
+  const response = await handleCount(
+    post({
+      model: "deepseek-v4-flash",
+      thinking: { type: "enabled" },
+      reasoning_effort: "medium",
+      messages: [{ role: "user", content: "你好" }],
+    }),
+    (prompt) => {
+      seen = prompt;
+      return 1;
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(seen.endsWith("<｜Assistant｜><think>")).toBe(true);
+  expect(seen.includes("Absolute maximum")).toBe(false);
+});
+
+test("maps low and medium onto high, and xhigh onto the max prefix", async () => {
+  const render = async (reasoning_effort: string): Promise<string> => {
+    let seen = "";
+    const response = await handleCount(
+      post({
+        model: "deepseek-v4-flash",
+        thinking: { type: "enabled" },
+        reasoning_effort,
+        messages: [{ role: "user", content: "你好" }],
+      }),
+      (prompt) => {
+        seen = prompt;
+        return 1;
+      },
+    );
+    expect(response.status).toBe(200);
+    return seen;
+  };
+
+  const high = await render("high");
+  expect(await render("medium")).toBe(high);
+  expect(await render("low")).toBe(high);
+  expect(high.endsWith("<｜Assistant｜><think>")).toBe(true);
+
+  const max = await render("max");
+  expect(await render("xhigh")).toBe(max);
+  expect(max.startsWith("<｜begin▁of▁sentence｜>Reasoning Effort: Absolute maximum")).toBe(true);
+  expect(max.endsWith("<｜Assistant｜><think>")).toBe(true);
+});
+
+test("writes request-level tools into the system message", async () => {
+  let seen = "";
+  const response = await handleCount(
+    post({
+      model: "deepseek-v4-flash",
+      thinking: { type: "enabled" },
+      messages: [
+        { role: "system", content: "你是助手" },
+        { role: "user", content: "算一下" },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "Calculator",
+            description: "算术",
+            parameters: { type: "object", properties: { formula: { type: "string" } } },
+          },
+        },
+      ],
+    }),
+    (prompt) => {
+      seen = prompt;
+      return 1;
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(seen).toContain("你是助手\n\n## Tools\n");
+  expect(seen).toContain('"name": "Calculator"');
+  expect(seen.endsWith("<｜Assistant｜><think>")).toBe(true);
+});
+
+test("prepends request-level tools when the conversation has no system message", async () => {
+  let seen = "";
+  const response = await handleCount(
+    post({
+      model: "deepseek-v4",
+      messages: [{ role: "user", content: "算一下" }],
+      tools: [{ type: "function", function: { name: "Calculator", parameters: { type: "object" } } }],
+    }),
+    (prompt) => {
+      seen = prompt;
+      return 1;
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(seen.startsWith("<｜begin▁of▁sentence｜>\n\n## Tools\n")).toBe(true);
+  expect(seen).toContain("<｜User｜>算一下");
+});
+
+test("rejects an unknown reasoning effort and a conflicting thinking switch", async () => {
+  const effort = await handleCount(
+    post({
+      model: "deepseek-v4-flash",
+      thinking: { type: "enabled" },
+      reasoning_effort: "minimal",
+      messages: [{ role: "user", content: "你好" }],
+    }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(effort.status).toBe(400);
+  expect(await effort.json()).toEqual({
+    error: {
+      message: 'reasoning_effort must be "low", "medium", "high", "max", "xhigh", or null',
+      type: "invalid_request_error",
+    },
+  });
+
+  const conflict = await handleCount(
+    post({
+      model: "deepseek-v4-flash",
+      thinking: { type: "enabled" },
+      thinking_mode: "chat",
+      messages: [{ role: "user", content: "你好" }],
+    }),
+    () => {
+      throw new Error("should not count");
+    },
+  );
+  expect(conflict.status).toBe(400);
+});
+
 test("rejects an unpaired surrogate before counting", async () => {
   const response = await dispatchCount(
     post({ model: "deepseek-v4", messages: [{ role: "user", content: "\uD800" }] }),
