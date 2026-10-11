@@ -23,9 +23,23 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.94.0"
           targets: wasm32-unknown-unknown
+
+      # Cargo reads .cargo/config.toml from the crate dir, so its rustflags are
+      # part of the build fingerprint and belong in the cache key.
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            tokenizer-wasm/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tokenizer-wasm/Cargo.lock', 'tokenizer-wasm/.cargo/config.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
