@@ -2,7 +2,7 @@ import {
   EncodeError,
   type ChatMessage,
   type ThinkingMode,
-} from "../encoding/deepseek-v4";
+} from "../encoding/shared";
 
 export function thinkingModeFromType(value: unknown): ThinkingMode | undefined {
   if (value == null) return undefined;

@@ -1,6 +1,5 @@
-import { encodeMessages as encodeV4, type ChatMessage } from "../src/encoding/deepseek-v4";
-import { encodeMessages as encodeV41 } from "../src/encoding/deepseek-flash";
-import { countTokens } from "../src/models/deepseek-v4-tokenizer";
+import { encodeMessages, type ChatMessage } from "../src/encoding/deepseek-flash";
+import { countTokens } from "../src/models/counter";
 
 const loops = 30;
 /** encodeMessages finishes well under 1ms, and workerd's clock is about 1ms. */
@@ -60,19 +59,17 @@ export default {
 
 function encodeResponse(preset: string): Response {
   const messages = preset === "tools" ? toolMessages : [{ role: "user", content: presetText(preset) }];
-  const v4 = timeEncode(encodeLoops, () =>
-    encodeV4(messages, { thinkingMode: "chat", dropThinking: true, addDefaultBosToken: true }),
-  );
-  const v41 = timeEncode(encodeLoops, () =>
-    encodeV41(messages, { thinkingMode: "chat", dropThinking: true, reasoningEffort: null }),
+  const encoded = timeEncode(encodeLoops, () =>
+    encodeMessages(messages, { thinkingMode: "chat", dropThinking: true, reasoningEffort: null }),
   );
   return Response.json({
     preset: `encode:${preset}`,
     thinkingMode: "chat",
     inputBytes: textEncoder.encode(JSON.stringify(messages)).byteLength,
     loops: encodeLoops,
-    v4: { encodeMs: v4.encodeMs, outputBytes: v4.outputBytes, tokens: countTokens(v4.prompt) },
-    v41: { encodeMs: v41.encodeMs, outputBytes: v41.outputBytes, tokens: countTokens(v41.prompt) },
+    encodeMs: encoded.encodeMs,
+    outputBytes: encoded.outputBytes,
+    tokens: countTokens(encoded.prompt),
   });
 }
 
@@ -81,7 +78,7 @@ function timeEncode(times: number, render: () => string): { encodeMs: number; ou
   const started = performance.now();
   for (let i = 0; i < times; i++) prompt = render();
   return {
-    encodeMs: (performance.now() - started) / loops,
+    encodeMs: (performance.now() - started) / times,
     outputBytes: textEncoder.encode(prompt).byteLength,
     prompt,
   };

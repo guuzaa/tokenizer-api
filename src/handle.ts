@@ -1,4 +1,4 @@
-import { EncodeError } from "./encoding/deepseek-v4";
+import { EncodeError } from "./encoding/shared";
 import { TokenizerInputError } from "./tokenizer";
 import { RATE_LIMIT_PERIOD_SECONDS, requestLimits } from "./limits";
 import { modelFamilies, resolveModel } from "./models/registry";

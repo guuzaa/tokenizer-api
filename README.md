@@ -1,8 +1,8 @@
 # tokenizer-api
 
-Count tokens for DeepSeek V4 and V4.1 chat messages.
+Count tokens for DeepSeek V4.1 chat messages.
 
-The worker renders messages with that model's chat template, then counts tokens with the model tokenizer.
+The worker renders messages with the V4.1 chat template, then counts tokens with the model tokenizer.
 
 ## API
 
@@ -12,7 +12,8 @@ The worker renders messages with that model's chat template, then counts tokens 
 curl http://localhost:8787/v1/token/count \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v4",
+    "model": "deepseek-flash",
+    "thinking_mode": "chat",
     "messages": [
       { "role": "system", "content": "You are a helpful assistant." },
       { "role": "user", "content": "Hello" }
@@ -21,48 +22,38 @@ curl http://localhost:8787/v1/token/count \
 ```
 
 ```json
-{ "data": { "total_tokens": 11 } }
+{ "data": { "total_tokens": 12 } }
 ```
 
-`deepseek-v4` and any name starting with `deepseek-v4-` use the V4 chat template. `deepseek-flash`, and any name starting with `deepseek-v4.1-`, uses the V4.1 encoder. Both count with one tokenizer.
+`deepseek-flash`, and any name starting with `deepseek-v4.1-`, uses this encoder. `deepseek-v4.1-flash` is one of those names. The example above is chat mode; omit `thinking_mode` and the default is thinking, which counts more tokens because the prompt includes a reasoning-effort line.
 
 ### Messages
 
-`messages` is a non-empty array. `content` is text.
+`messages` is a non-empty array. `content` is a string or a list of text and image blocks (`type` `text`, `image`, or `image_url`). An image block is the `<｜deepseek_image｜>` placeholder.
 
-`tools` is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). A list on the request is written into the leading system message, or into a new empty system message when the conversation does not start with one. A list already present on that system message is kept. The schemas are written into the prompt.
+`tools` is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). A list on the request is written into the leading system message, or into a new empty system message when the conversation does not start with one. A list already present on that system message is kept. The schemas are written into the prompt. Tool-call `arguments` may be an object or a JSON object string.
 
-`tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus string `content`) is merged into a user turn as a `<tool_result>` block. Tool `content` must be a string, or a list of content blocks. Objects, numbers, booleans, and null are rejected: the official encoder prints those with Python's `repr`, and a JSON body cannot reproduce that exactly (`22.0` and `22` are the same number after parsing).
+`tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus `content`) is merged into a user turn as a `<tool_result>` block. Tool `content` must be a string, or a list of content blocks. Objects, numbers, booleans, and null are rejected: the official encoder prints those with Python's `repr`, and a JSON body cannot reproduce that exactly (`22.0` and `22` are the same number after parsing).
 
 `reasoning_content` on an assistant message is that turn's thinking text.
 
-Other roles: `system`, `developer`, `user`, `assistant`, and `latest_reminder`.
+Roles: `system`, `user`, `assistant`, `tool`, and `latest_reminder`. A system message is marked with `<｜System｜>`, including one in the middle of the conversation.
 
 ### Options
 
-`thinking` is `{ "type": "enabled" }` or `{ "type": "disabled" }`. Enabled opens the turn with `<think>`. Disabled closes it with `</think>`. `thinking_mode` (`thinking` or `chat`) is the same switch. When both are set they must agree. The default is chat.
+The prompt format comes from `config/deepseek-v4.1/encoding.py`. The prompt includes the BOS token and the assistant header.
+
+`thinking` is `{ "type": "enabled" }` or `{ "type": "disabled" }`. Enabled opens the turn with `<think>`. Disabled closes it with `</think>`. `thinking_mode` (`thinking` or `chat`) and `enable_thinking` (`true` or `false`) are the same switch. When more than one is set they must agree. The default is thinking.
 
 `drop_thinking` defaults to `true`. In thinking mode, `reasoning_content` on assistant turns before the last user message is left out of the prompt. If any message has `tools`, thinking is kept.
 
-`add_default_bos_token` defaults to `true`. It prepends the BOS token at the start of the conversation.
-
-`reasoning_effort` is `low`, `medium`, `high`, `max`, `xhigh`, or `null` (default). In thinking mode, `max` and `xhigh` prepend the "Absolute maximum..." instruction. `low`, `medium`, and `high` are accepted and add nothing. That matches current DeepSeek V4 Pro and Flash, which map `low` and `medium` onto `high` and `xhigh` onto `max`. It does not match the older Flash-0731 template, where `high` and `max` are different prefixes.
-
-### deepseek-flash
-
-`deepseek-flash` encodes with the V4.1 prompt format from `config/deepseek-v4.1/encoding.py`. The default mode is thinking, and the default reasoning effort is `high`.
-
-In thinking mode the prompt starts with `Reasoning Effort: {budget}`. `low` is 50, `high` is 75, and `max` is 100. An integer from 1 to 100 is used as the budget. `enable_thinking` (`true` or `false`) selects the same mode as `thinking`. When `thinking`, `thinking_mode`, and `enable_thinking` are all set, they must agree.
-
-`drop_thinking` defaults to `true`. The prompt includes the BOS token and the assistant header.
-
-`content` may be a string or a list of text and image blocks (`type` `text`, `image`, or `image_url`). An image block is the `<｜deepseek_image｜>` placeholder. A `role: "tool"` result is merged into a user turn. Tool-call `arguments` may be an object or a JSON object string. A mid-conversation `system` message is kept and marked with `<｜System｜>`.
+`reasoning_effort` is `low`, `high`, `max`, an integer from 1 to 100, or omitted. The default is `high`. In thinking mode the prompt starts with `Reasoning Effort: {budget}`. `low` is 50, `high` is 75, and `max` is 100. An integer is used as the budget.
 
 ### Limits
 
 The free-plan defaults keep a worst-case request under the 10 ms CPU limit. The raw JSON body must be at most 48 KiB (`49152` bytes). The rendered prompt must be at most 8 KiB (`8192` bytes). Over either cap, the response is 413 `request_too_large`, and the tokenizer does not run. A body over the cap is rejected before `JSON.parse`. A prompt over the cap is rejected after the template is rendered and before tokenization.
 
-A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (66 bytes around an empty user message).
+A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (170 bytes around an empty user message).
 
 Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). A positive integer replaces that default. An unset or invalid value leaves its default in place. The two settings are independent.
 
@@ -103,7 +94,7 @@ An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the R
 
 ### Tokenizer
 
-Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4/tokenizer.json` is embedded in the wasm module. V4.1 uses the same BPE model; `<｜System｜>` and `<｜deepseek_image｜>` are registered when the module starts so those V4.1 chat tokens count as one id each. Special tokens are not added during encode; the chat template writes them into the prompt.
+Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4.1/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
 
 The wasm module is built, not committed. `pnpm test`, `pnpm check`, `pnpm dev`, and `pnpm deploy` run that build first.
 

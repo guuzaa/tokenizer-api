@@ -2,7 +2,7 @@ export type CountFn = (text: string) => number;
 
 /** One chat-template family. Matching, rendering, and the prompt cap belong together. */
 export interface ModelFamily {
-  /** Family id, for example `deepseek-v4`. This is not the caller's model string. */
+  /** Family id, for example `deepseek-flash`. This is not the caller's model string. */
   readonly name: string;
   /** Default prompt cap. A positive `MAX_PROMPT_BYTES` var replaces it for the request. */
   readonly maxPromptBytes: number;

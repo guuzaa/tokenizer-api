@@ -1,8 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { encodeMessages, EncodeError } from "../src/encoding/deepseek-flash";
+import { toJson } from "../src/encoding/shared";
 import { deepseekFlash } from "../src/models/deepseek-flash";
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), "test_data/deepseek-v4.1");
@@ -35,7 +37,7 @@ describe("deepseek-flash fixtures", () => {
 });
 
 test("counts the chat hello prompt", async () => {
-  const { countTokens } = await import("../src/models/deepseek-v4-tokenizer");
+  const { countTokens } = await import("../src/models/counter");
   const prompt = deepseekFlash.render({
     thinking_mode: "chat",
     messages: [
@@ -98,4 +100,29 @@ test("rejects an unknown role, a bad effort, and an image placeholder in text", 
       messages: [{ role: "user", content: [{ type: "text", text: "see <｜deepseek_image｜>" }] }],
     }),
   ).toThrow(/image placeholder/);
+});
+
+test("toJson matches json.dumps", () => {
+  const sample = { a: 1, b: "中文", nested: { ok: true, n: null } };
+  const py = spawnSync(
+    "python3",
+    ["-c", "import json,sys; print(json.dumps(json.load(sys.stdin), ensure_ascii=False))"],
+    { input: JSON.stringify(sample), encoding: "utf8" },
+  );
+  expect(py.status, py.stderr || "json.dumps failed").toBe(0);
+  expect(toJson(sample)).toBe(py.stdout.trimEnd());
+});
+
+test("rejects tool content that is not a string and renders string tool content", () => {
+  const options = { thinkingMode: "chat" as const, dropThinking: true, reasoningEffort: null };
+  expect(() => encodeMessages([{ role: "tool", tool_call_id: "call_1", content: { temperature: 22 } }], options)).toThrow(
+    /tool content must be a string/,
+  );
+  expect(() => encodeMessages([{ role: "tool", tool_call_id: "call_1", content: 22 }], options)).toThrow(
+    /tool content must be a string/,
+  );
+  const empty = encodeMessages([{ role: "tool", tool_call_id: "call_1", content: null }], options);
+  expect(empty).toContain("<tool_result></tool_result>");
+  const prompt = encodeMessages([{ role: "tool", tool_call_id: "call_1", content: '{"temperature": 22}' }], options);
+  expect(prompt).toContain('<tool_result>{"temperature": 22}</tool_result>');
 });

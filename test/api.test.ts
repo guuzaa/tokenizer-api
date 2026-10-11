@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { encodeMessages } from "../src/encoding/deepseek-v4";
 import { handleCount as dispatchCount, type CountEnv } from "../src/handle";
 import { MAX_BODY_BYTES, MAX_PROMPT_BYTES, RATE_LIMIT_PERIOD_SECONDS } from "../src/limits";
+import { deepseekFlash } from "../src/models/deepseek-flash";
 import { models } from "../src/models/runtime";
 
 function handleCount(request: Request, countTokens: (text: string) => number, env: CountEnv = {}): Promise<Response> {
@@ -11,9 +11,7 @@ function handleCount(request: Request, countTokens: (text: string) => number, en
 const textEncoder = new TextEncoder();
 
 function userPromptBytes(content: string): number {
-  return textEncoder.encode(
-    encodeMessages([{ role: "user", content }], { thinkingMode: "chat", dropThinking: true, addDefaultBosToken: true }),
-  ).byteLength;
+  return textEncoder.encode(deepseekFlash.render({ messages: [{ role: "user", content }] })).byteLength;
 }
 
 function post(body: unknown, headers?: HeadersInit): Request {
@@ -25,11 +23,11 @@ function post(body: unknown, headers?: HeadersInit): Request {
   });
 }
 
-test("returns the counter result for a deepseek-v4 chat", async () => {
+test("returns the counter result for a deepseek-v4.1 chat", async () => {
   let seen = "";
   const response = await handleCount(
     post({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4.1-flash",
       messages: [
         { role: "system", content: "你是助手" },
         { role: "user", content: "你好" },
@@ -43,17 +41,18 @@ test("returns the counter result for a deepseek-v4 chat", async () => {
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ data: { total_tokens: 7 } });
   expect(seen).toContain("<｜begin▁of▁sentence｜>");
+  expect(seen).toContain("Reasoning Effort: 75 ");
+  expect(seen).toContain("<｜System｜>");
   expect(seen).toContain("<｜User｜>你好");
-  expect(seen.endsWith("<｜Assistant｜></think>")).toBe(true);
+  expect(seen.endsWith("<｜Assistant｜><think>")).toBe(true);
 });
 
-test("thinking.type enabled opens the think token", async () => {
+test("thinking.type disabled closes the think token and omits the budget", async () => {
   let seen = "";
   const response = await handleCount(
     post({
-      model: "deepseek-v4-flash",
-      thinking: { type: "enabled" },
-      reasoning_effort: "medium",
+      model: "deepseek-v4.1-flash",
+      thinking: { type: "disabled" },
       messages: [{ role: "user", content: "你好" }],
     }),
     (prompt) => {
@@ -62,16 +61,16 @@ test("thinking.type enabled opens the think token", async () => {
     },
   );
   expect(response.status).toBe(200);
-  expect(seen.endsWith("<｜Assistant｜><think>")).toBe(true);
-  expect(seen.includes("Absolute maximum")).toBe(false);
+  expect(seen.includes("Reasoning Effort:")).toBe(false);
+  expect(seen.endsWith("<｜Assistant｜></think>")).toBe(true);
 });
 
-test("maps low and medium onto high, and xhigh onto the max prefix", async () => {
-  const render = async (reasoning_effort: string): Promise<string> => {
+test("maps reasoning effort onto a V4.1 budget", async () => {
+  const render = async (reasoning_effort: string | number): Promise<string> => {
     let seen = "";
     const response = await handleCount(
       post({
-        model: "deepseek-v4-flash",
+        model: "deepseek-v4.1-flash",
         thinking: { type: "enabled" },
         reasoning_effort,
         messages: [{ role: "user", content: "你好" }],
@@ -85,22 +84,17 @@ test("maps low and medium onto high, and xhigh onto the max prefix", async () =>
     return seen;
   };
 
-  const high = await render("high");
-  expect(await render("medium")).toBe(high);
-  expect(await render("low")).toBe(high);
-  expect(high.endsWith("<｜Assistant｜><think>")).toBe(true);
-
-  const max = await render("max");
-  expect(await render("xhigh")).toBe(max);
-  expect(max.startsWith("<｜begin▁of▁sentence｜>Reasoning Effort: Absolute maximum")).toBe(true);
-  expect(max.endsWith("<｜Assistant｜><think>")).toBe(true);
+  expect(await render("low")).toContain("Reasoning Effort: 50 ");
+  expect(await render("high")).toContain("Reasoning Effort: 75 ");
+  expect(await render("max")).toContain("Reasoning Effort: 100 ");
+  expect(await render(40)).toContain("Reasoning Effort: 40 ");
 });
 
 test("writes request-level tools into the system message", async () => {
   let seen = "";
   const response = await handleCount(
     post({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4.1-flash",
       thinking: { type: "enabled" },
       messages: [
         { role: "system", content: "你是助手" },
@@ -132,7 +126,8 @@ test("prepends request-level tools when the conversation has no system message",
   let seen = "";
   const response = await handleCount(
     post({
-      model: "deepseek-v4",
+      model: "deepseek-flash",
+      thinking_mode: "chat",
       messages: [{ role: "user", content: "算一下" }],
       tools: [{ type: "function", function: { name: "Calculator", parameters: { type: "object" } } }],
     }),
@@ -142,14 +137,14 @@ test("prepends request-level tools when the conversation has no system message",
     },
   );
   expect(response.status).toBe(200);
-  expect(seen.startsWith("<｜begin▁of▁sentence｜>\n\n## Tools\n")).toBe(true);
+  expect(seen.startsWith("<｜begin▁of▁sentence｜><｜System｜>\n\n## Tools\n")).toBe(true);
   expect(seen).toContain("<｜User｜>算一下");
 });
 
 test("rejects an unknown reasoning effort and a conflicting thinking switch", async () => {
   const effort = await handleCount(
     post({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4.1-flash",
       thinking: { type: "enabled" },
       reasoning_effort: "minimal",
       messages: [{ role: "user", content: "你好" }],
@@ -161,14 +156,15 @@ test("rejects an unknown reasoning effort and a conflicting thinking switch", as
   expect(effort.status).toBe(400);
   expect(await effort.json()).toEqual({
     error: {
-      message: 'reasoning_effort must be "low", "medium", "high", "max", "xhigh", or null',
+      message:
+        "Invalid reasoning effort for deepseek_v41: minimal, should be int within [1,100] or ['low', 'high', 'max']",
       type: "invalid_request_error",
     },
   });
 
   const conflict = await handleCount(
     post({
-      model: "deepseek-v4-flash",
+      model: "deepseek-v4.1-flash",
       thinking: { type: "enabled" },
       thinking_mode: "chat",
       messages: [{ role: "user", content: "你好" }],
@@ -182,7 +178,7 @@ test("rejects an unknown reasoning effort and a conflicting thinking switch", as
 
 test("rejects an unpaired surrogate before counting", async () => {
   const response = await dispatchCount(
-    post({ model: "deepseek-v4", messages: [{ role: "user", content: "\uD800" }] }),
+    post({ model: "deepseek-flash", messages: [{ role: "user", content: "\uD800" }] }),
     {},
     { models },
   );
@@ -205,7 +201,7 @@ test("rejects an unknown model", async () => {
 test("rejects non-string tool content", async () => {
   const response = await handleCount(
     post({
-      model: "deepseek-v4",
+      model: "deepseek-flash",
       messages: [
         {
           role: "assistant",
@@ -221,26 +217,30 @@ test("rejects non-string tool content", async () => {
   );
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
-    error: { message: "message 1 content must be a string", type: "invalid_request_error" },
+    error: { message: "tool content must be a string", type: "invalid_request_error" },
   });
 });
 
-test("rejects image content", async () => {
+test("renders an image block as the image placeholder", async () => {
+  let seen = "";
   const response = await handleCount(
     post({
-      model: "deepseek-v4",
+      model: "deepseek-flash",
+      thinking_mode: "chat",
       messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }] }],
     }),
-    () => {
-      throw new Error("should not count");
+    (prompt) => {
+      seen = prompt;
+      return 1;
     },
   );
-  expect(response.status).toBe(400);
+  expect(response.status).toBe(200);
+  expect(seen).toContain("<｜deepseek_image｜>");
 });
 
 test("rejects a body over the byte cap before counting", async () => {
   const payload = JSON.stringify({
-    model: "deepseek-v4",
+    model: "deepseek-flash",
     messages: [{ role: "user", content: "x".repeat(MAX_BODY_BYTES) }],
   });
   const response = await handleCount(
@@ -278,7 +278,7 @@ test("rejects a non-JSON body over the cap before parsing", async () => {
 });
 
 test("accepts a body at the cap and rejects one byte more", async () => {
-  const core = JSON.stringify({ model: "deepseek-v4", messages: [{ role: "user", content: "hi" }] });
+  const core = JSON.stringify({ model: "deepseek-flash", messages: [{ role: "user", content: "hi" }] });
   const coreBytes = textEncoder.encode(core).byteLength;
   const atCap = core + " ".repeat(MAX_BODY_BYTES - coreBytes);
   expect(textEncoder.encode(atCap).byteLength).toBe(MAX_BODY_BYTES);
@@ -309,7 +309,7 @@ test("accepts a body at the cap and rejects one byte more", async () => {
 test("rejects a rendered prompt over the cap before counting", async () => {
   const response = await handleCount(
     post({
-      model: "deepseek-v4",
+      model: "deepseek-flash",
       messages: [{ role: "user", content: "a".repeat(MAX_PROMPT_BYTES) }],
     }),
     () => {
@@ -325,11 +325,11 @@ test("rejects a rendered prompt over the cap before counting", async () => {
 test("accepts a rendered prompt at the default cap", async () => {
   const content = "7".repeat(MAX_PROMPT_BYTES - userPromptBytes(""));
   expect(userPromptBytes(content)).toBe(MAX_PROMPT_BYTES);
-  const atCap = await handleCount(post({ model: "deepseek-v4", messages: [{ role: "user", content }] }), () => 2);
+  const atCap = await handleCount(post({ model: "deepseek-flash", messages: [{ role: "user", content }] }), () => 2);
   expect(atCap.status).toBe(200);
 
   const oneOver = await handleCount(
-    post({ model: "deepseek-v4", messages: [{ role: "user", content: `${content}7` }] }),
+    post({ model: "deepseek-flash", messages: [{ role: "user", content: `${content}7` }] }),
     () => {
       throw new Error("should not count");
     },
@@ -343,14 +343,14 @@ test("accepts a rendered prompt at the default cap", async () => {
 test("a positive integer var overrides that cap and an invalid var does not", async () => {
   const overDefault = "c".repeat(MAX_PROMPT_BYTES);
   const raised = await handleCount(
-    post({ model: "deepseek-v4", messages: [{ role: "user", content: overDefault }] }),
+    post({ model: "deepseek-flash", messages: [{ role: "user", content: overDefault }] }),
     () => 2,
     { MAX_PROMPT_BYTES: "16384" },
   );
   expect(raised.status).toBe(200);
 
   const ignored = await handleCount(
-    post({ model: "deepseek-v4", messages: [{ role: "user", content: overDefault }] }),
+    post({ model: "deepseek-flash", messages: [{ role: "user", content: overDefault }] }),
     () => {
       throw new Error("should not count");
     },
@@ -361,7 +361,7 @@ test("a positive integer var overrides that cap and an invalid var does not", as
     error: { message: `rendered prompt exceeds ${MAX_PROMPT_BYTES} bytes`, type: "request_too_large" },
   });
 
-  const tiny = await handleCount(post({ model: "deepseek-v4", messages: [{ role: "user", content: "hi" }] }), () => {
+  const tiny = await handleCount(post({ model: "deepseek-flash", messages: [{ role: "user", content: "hi" }] }), () => {
     throw new Error("should not count");
   }, { MAX_BODY_BYTES: 32 });
   expect(tiny.status).toBe(413);
@@ -385,7 +385,7 @@ function limiter(allow: number): { env: CountEnv; keys: string[] } {
   };
 }
 
-const hello = { model: "deepseek-v4", messages: [{ role: "user", content: "hi" }] };
+const hello = { model: "deepseek-flash", messages: [{ role: "user", content: "hi" }] };
 
 test("limits each client IP and returns retry-after", async () => {
   const { env, keys } = limiter(1);

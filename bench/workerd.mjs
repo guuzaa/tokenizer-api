@@ -97,27 +97,20 @@ try {
     });
   }
 
-  function side(runs, key) {
-    const encode = runs.map((run) => run[key].encodeMs).sort((a, b) => a - b);
-    return {
-      encodeMsMedian: encode[2],
-      encodeMsMin: encode[0],
-      outputBytes: runs[0][key].outputBytes,
-      tokens: runs[0][key].tokens,
-    };
-  }
-
   const encodeCold = await sampleEncode("small");
   const encodeMessages = [];
   for (const preset of ["small", "mid", "cap", "tools"]) {
     const runs = [];
     for (let i = 0; i < 5; i++) runs.push(await sampleEncode(preset));
+    const encode = runs.map((run) => run.encodeMs).sort((a, b) => a - b);
     encodeMessages.push({
       preset,
       inputBytes: runs[0].inputBytes,
       thinkingMode: runs[0].thinkingMode,
-      v4: side(runs, "v4"),
-      v41: side(runs, "v41"),
+      encodeMsMedian: encode[2],
+      encodeMsMin: encode[0],
+      outputBytes: runs[0].outputBytes,
+      tokens: runs[0].tokens,
     });
   }
 

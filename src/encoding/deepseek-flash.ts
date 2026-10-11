@@ -20,7 +20,7 @@ import {
   type ChatMessage,
   type ContentBlock,
   type ThinkingMode,
-} from "./deepseek-v4";
+} from "./shared";
 
 export { EncodeError, type ChatMessage, type ThinkingMode };
 

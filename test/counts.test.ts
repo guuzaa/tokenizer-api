@@ -1,36 +1,59 @@
 import { expect, test } from "vitest";
-import { encodeMessages, type ChatMessage, type EncodeOptions } from "../src/encoding/deepseek-v4";
-import { countTokens } from "../src/models/deepseek-v4-tokenizer";
+import { deepseekFlash } from "../src/models/deepseek-flash";
+import { countTokens } from "../src/models/counter";
 
-function count(messages: ChatMessage[], options: Partial<EncodeOptions> = {}): number {
-  const prompt = encodeMessages(messages, { thinkingMode: "chat", ...options });
-  return countTokens(prompt);
+function count(body: Record<string, unknown>): number {
+  return countTokens(deepseekFlash.render(body));
 }
 
-const readmeMessages: ChatMessage[] = [
-  { role: "system", content: "You are a helpful assistant." },
-  { role: "user", content: "Hello" },
-];
-
-test("README example counts 11 tokens", () => {
-  expect(count(readmeMessages)).toBe(11);
-});
-
-test("chat template overhead and options match the tokenizer", () => {
-  expect(count([{ role: "user", content: "" }])).toBe(4);
-  expect(count([{ role: "user", content: "Hello" }])).toBe(5);
-  expect(count([{ role: "user", content: "Hello" }], { addDefaultBosToken: false })).toBe(4);
-  expect(count([{ role: "system", content: "You are a helpful assistant." }])).toBe(7);
-  expect(count([{ role: "user", content: "👋" }])).toBe(6);
-  expect(count(readmeMessages, { thinkingMode: "thinking" })).toBe(11);
-  expect(count([{ role: "user", content: "Hello" }], { thinkingMode: "thinking", reasoningEffort: "high" })).toBe(5);
-  expect(count([{ role: "user", content: "Hello" }], { thinkingMode: "thinking", reasoningEffort: "max" })).toBe(84);
-
-  const withReasoning: ChatMessage[] = [
+const hello = { messages: [{ role: "user", content: "Hello" }] };
+const withReasoning = {
+  thinking_mode: "thinking" as const,
+  messages: [
     { role: "user", content: "Hello" },
     { role: "assistant", content: "Hi", reasoning_content: "The user said hello." },
     { role: "user", content: "Again" },
-  ];
-  expect(count(withReasoning, { thinkingMode: "thinking" })).toBe(11);
-  expect(count(withReasoning, { thinkingMode: "thinking", dropThinking: false })).toBe(17);
+  ],
+};
+
+test("V4.1 prompts count with the embedded tokenizer", () => {
+  const encoder = new TextEncoder();
+  expect({
+    readmeChat: count({
+      thinking_mode: "chat",
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "Hello" },
+      ],
+    }),
+    readmeDefault: count({
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "Hello" },
+      ],
+    }),
+    chatHello: count({ ...hello, thinking_mode: "chat" }),
+    defaultHello: count(hello),
+    low: count({ ...hello, reasoning_effort: "low" }),
+    max: count({ ...hello, reasoning_effort: "max" }),
+    chatEmpty: count({ thinking_mode: "chat", messages: [{ role: "user", content: "" }] }),
+    defaultEmpty: count({ messages: [{ role: "user", content: "" }] }),
+    emoji: count({ thinking_mode: "chat", messages: [{ role: "user", content: "👋" }] }),
+    dropped: count(withReasoning),
+    kept: count({ ...withReasoning, drop_thinking: false }),
+    emptyPromptBytes: encoder.encode(deepseekFlash.render({ messages: [{ role: "user", content: "" }] })).byteLength,
+  }).toEqual({
+    readmeChat: 12,
+    readmeDefault: 37,
+    chatHello: 5,
+    defaultHello: 31,
+    low: 31,
+    max: 31,
+    chatEmpty: 4,
+    defaultEmpty: 30,
+    emoji: 6,
+    dropped: 37,
+    kept: 43,
+    emptyPromptBytes: 170,
+  });
 });
