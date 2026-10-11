@@ -53,13 +53,13 @@ The prompt format comes from `config/deepseek-v4.1/encoding.py`. The prompt incl
 
 The free-plan defaults keep a worst-case request under the 10 ms CPU limit. The raw JSON body must be at most 48 KiB (`49152` bytes). The rendered prompt must be at most 8 KiB (`8192` bytes). Over either cap, the response is 413 `request_too_large`, and the tokenizer does not run. A body over the cap is rejected before `JSON.parse`. A prompt over the cap is rejected after the template is rendered and before tokenization.
 
-A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (170 bytes around an empty user message).
+A long run of digits is the slowest input measured in workerd. At 8 KiB a warm request takes about 9 ms in the handler. The cap stays there so that run stays under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (170 bytes around an empty user message).
 
 Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). A positive integer replaces that default. An unset or invalid value leaves its default in place. The two settings are independent.
 
-Wasm memory stays about 58 MiB through an 8 KiB prompt and about 62 MiB at 128 KiB. A 1 MiB prompt with no whitespace grew it to about 133 MiB, past the 128 MiB isolate limit, so keep a paid prompt at or below 128 KiB.
+Wasm memory stays about 70 MiB through an 8 KiB prompt.
 
-On the Workers Paid plan the default CPU limit is 30 seconds and `limits.cpu_ms` can raise it up to 5 minutes. Do not set `limits.cpu_ms` on the free plan; that configuration is rejected. A 128 KiB digit run measured about 90 ms (max 95 ms) in workerd. A paid deploy can raise the caps and set the CPU limit above that measurement:
+On the Workers Paid plan the default CPU limit is 30 seconds and `limits.cpu_ms` can raise it up to 5 minutes. Do not set `limits.cpu_ms` on the free plan; that configuration is rejected. A paid deploy can raise the caps and set the CPU limit:
 
 ```toml
 [vars]
@@ -70,7 +70,7 @@ MAX_BODY_BYTES = "786432"
 cpu_ms = 200
 ```
 
-`786432` is 768 KiB, enough for a `\uXXXX` encoding of a 128 KiB prompt. The isolate encodes a max-size digit run four times at startup so the first request does not pay the one-time cost. That stays inside the 1 second startup limit.
+`786432` is 768 KiB, enough for a `\uXXXX` encoding of a 128 KiB prompt. The isolate builds the vocabulary at startup and encodes a max-size digit run four times, so that one-time cost stays inside the 1 second startup limit.
 
 ### Errors
 
@@ -94,9 +94,9 @@ An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the R
 
 ### Tokenizer
 
-Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4.1/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
+Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23.2) compiled into the worker. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4.1/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
 
-The wasm module is built, not committed. `pnpm test`, `pnpm check`, `pnpm dev`, and `pnpm deploy` run that build first.
+The worker is the `crates/worker` crate, built with `worker-build`. The wasm module is built, not committed. `pnpm test`, `pnpm dev`, and `pnpm deploy` run that build.
 
 ### Access
 
@@ -116,11 +116,11 @@ Then send `Authorization: Bearer <token>`. A missing or unknown token is 401. Wi
 
 ```bash
 pnpm install
-pnpm dev
+cargo test -p encode
 pnpm test
-pnpm check
+pnpm dev
 ```
 
 Installs use `registry.npmjs.org` (`.npmrc`). The package manager is pnpm 12 (`packageManager` in `package.json`).
 
-`pnpm test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`). Those commands need Rust, the `wasm32-unknown-unknown` target, and `wasm-bindgen` 0.2.129. `scripts/build-wasm.sh` installs that `wasm-bindgen` release if it is missing. CI installs the Rust toolchain before the tests.
+`cargo test -p encode` checks the chat template against `test/test_data/deepseek-v4.1`. `pnpm test` builds the wasm worker and replays `fixtures/golden.json` in workerd. Both need Rust 1.94.0 and the `wasm32-unknown-unknown` target (`rust-toolchain.toml`). `scripts/build-worker.sh` installs `worker-build` 0.8.7 and `wasm-bindgen` 0.2.129. CI installs that toolchain, then runs `cargo fmt`, `cargo clippy`, the crate tests, the wasm build, and the golden replay.
