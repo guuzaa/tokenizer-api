@@ -60,6 +60,22 @@ test("rejects an unpaired surrogate inside workerd", async () => {
   });
 });
 
+test("counts a deepseek-flash prompt inside workerd", async () => {
+  const response = await post(
+    {
+      model: "deepseek-flash",
+      thinking_mode: "chat",
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "Hello" },
+      ],
+    },
+    "203.0.113.21",
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ data: { total_tokens: 12 } });
+});
+
 test("rejects an unknown model inside workerd", async () => {
   const response = await post({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }, "203.0.113.14");
   expect(response.status).toBe(400);

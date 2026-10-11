@@ -1,8 +1,8 @@
 # tokenizer-api
 
-Count tokens for DeepSeek V4 chat messages.
+Count tokens for DeepSeek V4 and V4.1 chat messages.
 
-The worker renders messages in the DeepSeek V4 prompt format, then counts tokens with the model tokenizer.
+The worker renders messages with that model's chat template, then counts tokens with the model tokenizer.
 
 ## API
 
@@ -24,7 +24,7 @@ curl http://localhost:8787/v1/token/count \
 { "data": { "total_tokens": 11 } }
 ```
 
-`model` must be `deepseek-v4` or start with `deepseek-v4-`. Every accepted name uses this same tokenizer and chat template.
+`deepseek-v4` and any name starting with `deepseek-v4-` use the V4 chat template. `deepseek-flash`, and any name starting with `deepseek-v4.1-`, uses the V4.1 encoder. Both count with one tokenizer.
 
 ### Messages
 
@@ -47,6 +47,16 @@ Other roles: `system`, `developer`, `user`, `assistant`, and `latest_reminder`.
 `add_default_bos_token` defaults to `true`. It prepends the BOS token at the start of the conversation.
 
 `reasoning_effort` is `low`, `medium`, `high`, `max`, `xhigh`, or `null` (default). In thinking mode, `max` and `xhigh` prepend the "Absolute maximum..." instruction. `low`, `medium`, and `high` are accepted and add nothing. That matches current DeepSeek V4 Pro and Flash, which map `low` and `medium` onto `high` and `xhigh` onto `max`. It does not match the older Flash-0731 template, where `high` and `max` are different prefixes.
+
+### deepseek-flash
+
+`deepseek-flash` encodes with the V4.1 prompt format from `config/deepseek-v4.1/encoding.py`. The default mode is thinking, and the default reasoning effort is `high`.
+
+In thinking mode the prompt starts with `Reasoning Effort: {budget}`. `low` is 50, `high` is 75, and `max` is 100. An integer from 1 to 100 is used as the budget. `enable_thinking` (`true` or `false`) selects the same mode as `thinking`. When `thinking`, `thinking_mode`, and `enable_thinking` are all set, they must agree.
+
+`drop_thinking` defaults to `true`. The prompt includes the BOS token and the assistant header.
+
+`content` may be a string or a list of text and image blocks (`type` `text`, `image`, or `image_url`). An image block is the `<｜deepseek_image｜>` placeholder. A `role: "tool"` result is merged into a user turn. Tool-call `arguments` may be an object or a JSON object string. A mid-conversation `system` message is kept and marked with `<｜System｜>`.
 
 ### Limits
 
@@ -93,7 +103,7 @@ An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the R
 
 ### Tokenizer
 
-Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
+Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4/tokenizer.json` is embedded in the wasm module. V4.1 uses the same BPE model; `<｜System｜>` and `<｜deepseek_image｜>` are registered when the module starts so those V4.1 chat tokens count as one id each. Special tokens are not added during encode; the chat template writes them into the prompt.
 
 The wasm module is built, not committed. `pnpm test`, `pnpm check`, `pnpm dev`, and `pnpm deploy` run that build first.
 

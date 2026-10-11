@@ -6,6 +6,7 @@ import {
   type ThinkingMode,
 } from "../encoding/deepseek-v4";
 import { MAX_PROMPT_BYTES } from "../limits";
+import { thinkingModeFromType, withRequestTools } from "./utils";
 import type { ModelFamily } from "./types";
 
 function assertTextMessages(messages: ChatMessage[]): void {
@@ -33,17 +34,6 @@ const reasoningEffortAliases = {
   medium: "high",
   low: "high",
 } as const satisfies Record<string, ReasoningEffort>;
-
-function thinkingModeFromType(value: unknown): ThinkingMode | undefined {
-  if (value == null) return undefined;
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new EncodeError('thinking must be {"type":"enabled"} or {"type":"disabled"}');
-  }
-  const type = (value as { type?: unknown }).type;
-  if (type === "enabled") return "thinking";
-  if (type === "disabled") return "chat";
-  throw new EncodeError('thinking.type must be "enabled" or "disabled"');
-}
 
 function readThinkingMode(body: Record<string, unknown>): ThinkingMode {
   const fromThinking = thinkingModeFromType(body.thinking);
@@ -83,19 +73,6 @@ function readOptions(body: Record<string, unknown>): {
     addDefaultBosToken: typeof body.add_default_bos_token === "boolean" ? body.add_default_bos_token : true,
     reasoningEffort: readReasoningEffort(body.reasoning_effort),
   };
-}
-
-function withRequestTools(messages: ChatMessage[], tools: unknown): ChatMessage[] {
-  if (tools == null) return messages;
-  if (!Array.isArray(tools)) throw new EncodeError("tools must be a list");
-  if (tools.length === 0) return messages;
-
-  const first = messages[0];
-  if (first?.role === "system") {
-    if (first.tools != null) return messages;
-    return [{ ...first, tools }, ...messages.slice(1)];
-  }
-  return [{ role: "system", content: "", tools }, ...messages];
 }
 
 export const deepseekV4 = {

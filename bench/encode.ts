@@ -1,5 +1,5 @@
 /**
- * Token timing is measured inside workerd, which is the runtime that serves the API.
+ * Tokenizer and encodeMessages timing is measured inside workerd, the runtime that serves the API.
  * `pnpm bench` builds the wasm module and runs bench/workerd.mjs under Node.
  */
 import { spawnSync } from "node:child_process";

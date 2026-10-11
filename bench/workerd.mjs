@@ -61,6 +61,7 @@ try {
     const response = await worker.fetch(`http://example.com/?preset=${preset}`);
     const wallMs = performance.now() - started;
     const body = await response.json();
+    if (response.status !== 200) throw new Error(`preset ${preset} failed: ${JSON.stringify(body)}`);
     return {
       status: response.status,
       wallMs,
@@ -70,6 +71,13 @@ try {
       loops: body.loops,
       encodeMs: body.encodeMs,
     };
+  }
+
+  async function sampleEncode(preset) {
+    const response = await worker.fetch(`http://example.com/?preset=encode:${preset}`);
+    const body = await response.json();
+    if (response.status !== 200) throw new Error(`encode:${preset} failed: ${JSON.stringify(body)}`);
+    return body;
   }
 
   const cold = await sample("small");
@@ -89,11 +97,36 @@ try {
     });
   }
 
+  function side(runs, key) {
+    const encode = runs.map((run) => run[key].encodeMs).sort((a, b) => a - b);
+    return {
+      encodeMsMedian: encode[2],
+      encodeMsMin: encode[0],
+      outputBytes: runs[0][key].outputBytes,
+      tokens: runs[0][key].tokens,
+    };
+  }
+
+  const encodeCold = await sampleEncode("small");
+  const encodeMessages = [];
+  for (const preset of ["small", "mid", "cap", "tools"]) {
+    const runs = [];
+    for (let i = 0; i < 5; i++) runs.push(await sampleEncode(preset));
+    encodeMessages.push({
+      preset,
+      inputBytes: runs[0].inputBytes,
+      thinkingMode: runs[0].thinkingMode,
+      v4: side(runs, "v4"),
+      v41: side(runs, "v41"),
+    });
+  }
+
   const report = {
     bundleBytes,
     bundleGzipBytes,
     cold,
     warm,
+    encodeMessages: { cold: encodeCold, warm: encodeMessages },
     memory: workerdRss(),
   };
   console.log(JSON.stringify(report, null, 2));

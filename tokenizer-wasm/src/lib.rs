@@ -1,9 +1,11 @@
 #[cfg(all(target_arch = "wasm32", not(getrandom_backend = "custom")))]
-compile_error!("build the wasm crate from tokenizer-wasm/ so .cargo/config.toml selects the custom getrandom backend");
+compile_error!(
+    "build the wasm crate from tokenizer-wasm/ so .cargo/config.toml selects the custom getrandom backend"
+);
 
 use std::sync::OnceLock;
 
-use tokenizers::Tokenizer;
+use tokenizers::{AddedToken, Tokenizer};
 use wasm_bindgen::prelude::*;
 
 // ahash asks getrandom for its map seeds while the vocab is built. Workerd
@@ -54,8 +56,23 @@ fn tokenizer() -> &'static Tokenizer {
     TOKENIZER.get_or_init(|| {
         console_error_panic_hook::set_once();
         tokenizers::parallelism::set_parallelism(false);
-        Tokenizer::from_bytes(include_bytes!("../../config/deepseek-v4/tokenizer.json"))
-            .expect("deepseek-v4 tokenizer.json")
+        // V4 and V4.1 share this BPE model. The V4.1 chat template emits two added
+        // tokens whose strings differ from the V4 vocab. Register them so a flash
+        // prompt counts each as one token, without embedding a second vocab.
+        let mut tokenizer =
+            Tokenizer::from_bytes(include_bytes!("../../config/deepseek-v4/tokenizer.json"))
+                .expect("deepseek-v4 tokenizer.json");
+        let added = tokenizer
+            .add_tokens([
+                AddedToken::from("<｜System｜>", false),
+                AddedToken::from("<｜deepseek_image｜>", false).normalized(false),
+            ])
+            .expect("deepseek-v4.1 added tokens");
+        assert_eq!(
+            added, 2,
+            "deepseek-v4.1 added tokens were already in the vocab"
+        );
+        tokenizer
     })
 }
 

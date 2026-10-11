@@ -1,6 +1,7 @@
 import { encodeMessages } from "./encoding/deepseek-v4";
 import { handleCount } from "./handle";
 import { MAX_PROMPT_BYTES } from "./limits";
+import { deepseekFlash } from "./models/deepseek-flash";
 import { countTokens } from "./models/deepseek-v4-tokenizer";
 import { models } from "./models/runtime";
 
@@ -8,6 +9,9 @@ import { models } from "./models/runtime";
 // a digit run is the slowest input. Run that path during startup (1s budget)
 // so a request does not pay it against the 10ms CPU limit. Global scope cannot
 // read a request body, so this stays synchronous.
+// The V4.1 template is parsed at import. Run it once so the first flash request does not pay that.
+countTokens(deepseekFlash.render({ messages: [{ role: "user", content: "7".repeat(256) }] }));
+
 const warmupJson = JSON.stringify({
   model: "deepseek-v4",
   messages: [{ role: "user", content: "7".repeat(MAX_PROMPT_BYTES) }],

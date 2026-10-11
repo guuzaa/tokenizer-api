@@ -11,8 +11,9 @@ function wasmModulePlugin(): Plugin {
     name: "wasm-module",
     enforce: "pre",
     load(id) {
-      if (!id.endsWith(".wasm")) return null;
-      const bytes = readFileSync(id);
+      const file = id.split("?")[0] ?? id;
+      if (!file.endsWith(".wasm")) return null;
+      const bytes = readFileSync(file);
       return `const bytes = Uint8Array.from(atob(${JSON.stringify(bytes.toString("base64"))}), (char) => char.charCodeAt(0));
 export default new WebAssembly.Module(bytes);`;
     },

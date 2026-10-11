@@ -53,6 +53,9 @@ function buildCounter(): TokenCounter {
  * DeepSeek V4 token counter.
  * The vocab is the Hugging Face `tokenizers` crate (fancy-regex, no onig) compiled into
  * `tokenizer-wasm/pkg`, with `config/deepseek-v4/tokenizer.json` embedded at build time.
+ * `<｜System｜>` and `<｜deepseek_image｜>` are registered at startup so DeepSeek V4.1
+ * prompts count those chat tokens as one id each. The BPE model matches
+ * `config/deepseek-v4.1/tokenizer.json`.
  */
 export function createTokenCounter(): TokenCounter {
   counter ??= buildCounter();

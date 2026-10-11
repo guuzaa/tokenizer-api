@@ -5,17 +5,17 @@ export class EncodeError extends Error {
   }
 }
 
-const bosToken = "<｜begin▁of▁sentence｜>";
-const eosToken = "<｜end▁of▁sentence｜>";
-const thinkingStartToken = "<think>";
-const thinkingEndToken = "</think>";
-const dsmlToken = "｜DSML｜";
+export const bosToken = "<｜begin▁of▁sentence｜>";
+export const eosToken = "<｜end▁of▁sentence｜>";
+export const thinkingStartToken = "<think>";
+export const thinkingEndToken = "</think>";
+export const dsmlToken = "｜DSML｜";
 
-const userSpToken = "<｜User｜>";
-const assistantSpToken = "<｜Assistant｜>";
-const latestReminderSpToken = "<｜latest_reminder｜>";
+export const userSpToken = "<｜User｜>";
+export const assistantSpToken = "<｜Assistant｜>";
+export const latestReminderSpToken = "<｜latest_reminder｜>";
 
-const taskTokens = {
+export const taskTokens = {
   action: "<｜action｜>",
   query: "<｜query｜>",
   authority: "<｜authority｜>",
@@ -25,9 +25,9 @@ const taskTokens = {
 } as const;
 
 type TaskName = keyof typeof taskTokens;
-const validTasks = new Set<string>(Object.keys(taskTokens));
+export const validTasks = new Set<string>(Object.keys(taskTokens));
 
-const responseFormatTemplate =
+export const responseFormatTemplate =
   "## Response Format:\n\nYou MUST strictly adhere to the following schema to reply:\n";
 
 const toolCallsBlockName = "tool_calls";
@@ -93,13 +93,13 @@ export interface EncodeOptions {
   reasoningEffort?: ReasoningEffort | null;
 }
 
-function pyTruthy(value: unknown): boolean {
+export function pyTruthy(value: unknown): boolean {
   if (value == null || value === false || value === 0 || value === "") return false;
   if (Array.isArray(value)) return value.length > 0;
   return true;
 }
 
-function pyOrEmpty(value: unknown): string {
+export function pyOrEmpty(value: unknown): string {
   if (!pyTruthy(value)) return "";
   return typeof value === "string" ? value : String(value);
 }
@@ -168,7 +168,7 @@ export function toJson(value: unknown): string {
   }
 }
 
-function asRecord(value: unknown, message: string): Record<string, unknown> {
+export function asRecord(value: unknown, message: string): Record<string, unknown> {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
     throw new EncodeError(message);
   }
@@ -415,7 +415,7 @@ function mergeToolMessages(messages: ChatMessage[]): ChatMessage[] {
   return merged;
 }
 
-function toolCallId(toolCall: unknown): string {
+export function toolCallId(toolCall: unknown): string {
   if (toolCall == null || typeof toolCall !== "object" || Array.isArray(toolCall)) return "";
   const call = toolCall as { id?: unknown; function?: unknown };
   if (typeof call.id === "string" && call.id) return call.id;
@@ -426,7 +426,7 @@ function toolCallId(toolCall: unknown): string {
   return "";
 }
 
-function sortToolResultsByCallOrder(messages: ChatMessage[]): ChatMessage[] {
+export function sortToolResultsByCallOrder(messages: ChatMessage[]): ChatMessage[] {
   let lastToolCallOrder = new Map<string, number>();
   for (const msg of messages) {
     if (msg.role === "assistant" && pyTruthy(msg.tool_calls) && Array.isArray(msg.tool_calls)) {
@@ -455,8 +455,7 @@ function sortToolResultsByCallOrder(messages: ChatMessage[]): ChatMessage[] {
 
 const keepRoles = new Set(["user", "system", "tool", "latest_reminder", "direct_search_results"]);
 
-function dropThinkingMessages(messages: ChatMessage[]): ChatMessage[] {
-  const lastUserIdx = findLastUserIndex(messages);
+export function dropThinkingMessages(messages: ChatMessage[], lastUserIdx = findLastUserIndex(messages)): ChatMessage[] {
   const result: ChatMessage[] = [];
   messages.forEach((msg, idx) => {
     const role = msg.role;

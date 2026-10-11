@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { encodeMessages, EncodeError, toJson, type ChatMessage, type ThinkingMode } from "../src/encoding/deepseek-v4";
 
-const dataDir = join(dirname(fileURLToPath(import.meta.url)), "test_data");
+const dataDir = join(dirname(fileURLToPath(import.meta.url)), "test_data/deepseek-v4");
 
 /** Cases 1–3 keep reasoning; case 4 is a chat prompt with an action task. */
 const thinkingModeByCase: Record<string, ThinkingMode> = {

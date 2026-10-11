@@ -436,6 +436,28 @@ test("rate limits a valid API key separately from its IP", async () => {
   expect(keys[0]).not.toContain("secret-token");
 });
 
+test("counts a deepseek-flash chat with the V4.1 template", async () => {
+  let seen = "";
+  const response = await handleCount(
+    post({
+      model: "deepseek-flash",
+      messages: [
+        { role: "system", content: "你是助手" },
+        { role: "user", content: "你好" },
+      ],
+    }),
+    (prompt) => {
+      seen = prompt;
+      return 9;
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ data: { total_tokens: 9 } });
+  expect(seen).toContain("Reasoning Effort: 75 ");
+  expect(seen).toContain("<｜System｜>");
+  expect(seen.endsWith("<｜Assistant｜><think>")).toBe(true);
+});
+
 test("rejects other methods and paths", async () => {
   const missing = await handleCount(new Request("http://tokenizer.test/health"), () => 0);
   expect(missing.status).toBe(404);
