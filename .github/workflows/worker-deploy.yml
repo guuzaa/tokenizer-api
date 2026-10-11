@@ -28,21 +28,27 @@ jobs:
         with:
           toolchain: "1.94.0"
           targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
 
-      # Cargo reads .cargo/config.toml from the crate dir, so its rustflags are
-      # part of the build fingerprint and belong in the cache key.
+      - name: Build packages for worker-build
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      # .cargo/config.toml rustflags are part of the wasm build fingerprint.
       - name: Cargo cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
-            tokenizer-wasm/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('tokenizer-wasm/Cargo.lock', 'tokenizer-wasm/.cargo/config.toml') }}
+            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.cache/worker-build
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', '.cargo/config.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - run: cargo test -p encode
       - run: pnpm test
 
       - name: Deploy worker
