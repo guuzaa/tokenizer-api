@@ -1,0 +1,27 @@
+[package]
+name = "token-count"
+version = "0.1.0"
+edition.workspace = true
+rust-version = "1.94"
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+console_error_panic_hook = "0.1"
+encode = { path = "../encode" }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+getrandom = { version = "0.3", default-features = false }
+js-sys = "0.3"
+sha2 = "0.10"
+tokenizers = { version = "=0.23.2", default-features = false, features = ["unstable_wasm"] }
+wasm-bindgen = "=0.2.129"
+worker = "=0.8.7"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(getrandom_backend, values("custom"))'] }

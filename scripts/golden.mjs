@@ -5,17 +5,18 @@
  *   node scripts/golden.mjs check <bundle-dir> <fixtures>
  *
  * The bundle directory is a `wrangler deploy --dry-run --outdir` result:
- * index.js plus the compiled wasm module.
+ * shim.js or index.js, plus the compiled wasm module.
  */
 import http from "node:http";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 
 const require = createRequire(new URL("../package.json", import.meta.url));
 const { Miniflare } = require("miniflare");
 
 const mode = process.argv[2];
-const bundleDir = process.argv[3];
+const bundleDir = process.argv[3] ? resolve(process.argv[3]) : "";
 const fixturePath = process.argv[4];
 if (!mode || !bundleDir || !fixturePath || (mode !== "record" && mode !== "check")) {
   console.error("usage: node scripts/golden.mjs <record|check> <bundle-dir> <fixtures.json>");
@@ -23,11 +24,15 @@ if (!mode || !bundleDir || !fixturePath || (mode !== "record" && mode !== "check
 }
 
 function bundleModules() {
+  const jsName = ["index.js", "shim.js"].find((name) => existsSync(`${bundleDir}/${name}`));
   const wasmName = readdirSync(bundleDir).find((name) => name.endsWith(".wasm"));
-  if (!wasmName) throw new Error(`no wasm module in ${bundleDir}`);
+  if (!jsName || !wasmName) throw new Error(`bundle in ${bundleDir} needs a js entry and a wasm module`);
   return {
-    "index.js": { type: "esm", contents: readFileSync(`${bundleDir}/index.js`, "utf8") },
-    [wasmName]: { type: "wasm", contents: readFileSync(`${bundleDir}/${wasmName}`) },
+    main: jsName,
+    modules: {
+      [jsName]: { type: "esm", contents: readFileSync(`${bundleDir}/${jsName}`, "utf8") },
+      [wasmName]: { type: "wasm", contents: readFileSync(`${bundleDir}/${wasmName}`) },
+    },
   };
 }
 
@@ -46,6 +51,7 @@ function textBindings(bindings) {
 }
 
 async function start(bindings) {
+  const bundle = bundleModules();
   return new Miniflare({
     workers: [
       {
@@ -53,9 +59,9 @@ async function start(bindings) {
           name: "token-count",
           compatibilityDate: "2026-10-09",
           manifest: {
-            mainModule: "index.js",
+            mainModule: bundle.main,
             modulesRoot: bundleDir,
-            modules: bundleModules(),
+            modules: bundle.modules,
           },
           env: textBindings(bindings),
         },

@@ -1,0 +1,13 @@
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "--cfg",
+  'getrandom_backend="custom"',
+  # Rust 1.94 enables this by default. Keep it on: wasm-bindgen's catch
+  # wrappers need the externref table. scripts/build-worker.sh passes
+  # --reference-types to the CLI, which worker-build 0.8.7 does not.
+  "-C",
+  "target-feature=+reference-types",
+  # Parsing the embedded vocab needs more than the default 1 MiB wasm stack.
+  "-C",
+  "link-arg=-zstack-size=16777216",
+]
