@@ -61,7 +61,15 @@ try {
     const response = await worker.fetch(`http://example.com/?preset=${preset}`);
     const wallMs = performance.now() - started;
     const body = await response.json();
-    return { status: response.status, wallMs, ...body };
+    return {
+      status: response.status,
+      wallMs,
+      preset: body.preset,
+      bytes: body.bytes,
+      tokens: body.tokens,
+      loops: body.loops,
+      encodeMs: body.encodeMs,
+    };
   }
 
   const cold = await sample("small");

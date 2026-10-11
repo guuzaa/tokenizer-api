@@ -80,9 +80,3 @@ pub fn count_tokens(text: &str) -> Result<u32, JsError> {
         .map_err(|err| JsError::new(&err.to_string()))?;
     Ok(encoding.len() as u32)
 }
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn memory_bytes() -> u32 {
-    (core::arch::wasm32::memory_size(0) * 65536) as u32
-}

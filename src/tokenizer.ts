@@ -1,5 +1,5 @@
 import wasmModule from "../tokenizer-wasm/pkg/tokenizer_wasm_bg.wasm";
-import { count_tokens, encode_ids, initSync, memory_bytes } from "../tokenizer-wasm/pkg/tokenizer_wasm.js";
+import { count_tokens, encode_ids, initSync } from "../tokenizer-wasm/pkg/tokenizer_wasm.js";
 
 export class TokenizerInputError extends Error {
   constructor(message: string) {
@@ -12,9 +12,6 @@ export interface TokenCounter {
   encodeIds(text: string): number[];
   countTokens(text: string): number;
 }
-
-/** Milliseconds spent instantiating the wasm tokenizer, measured in the runtime that loaded it. */
-export let tokenizerInitMs = 0;
 
 let counter: TokenCounter | undefined;
 
@@ -39,10 +36,7 @@ function isWellFormed(text: string): boolean {
 }
 
 function buildCounter(): TokenCounter {
-  const started = performance.now();
-  const startedDate = Date.now();
   initSync({ module: wasmModule });
-  tokenizerInitMs = Math.max(performance.now() - started, Date.now() - startedDate);
   return {
     encodeIds(text: string): number[] {
       assertWellFormed(text);
@@ -63,9 +57,4 @@ function buildCounter(): TokenCounter {
 export function createTokenCounter(): TokenCounter {
   counter ??= buildCounter();
   return counter;
-}
-
-export function tokenizerMemoryBytes(): number {
-  createTokenCounter();
-  return memory_bytes();
 }

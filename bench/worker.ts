@@ -1,5 +1,4 @@
-import { countTokens, tokenizerInitMs } from "../src/models/deepseek-v4-tokenizer";
-import { tokenizerMemoryBytes } from "../src/tokenizer";
+import { countTokens } from "../src/models/deepseek-v4-tokenizer";
 
 const loops = 30;
 
@@ -17,8 +16,6 @@ export default {
       tokens,
       loops,
       encodeMs,
-      initMs: tokenizerInitMs,
-      memoryBytes: tokenizerMemoryBytes(),
     });
   },
 };
