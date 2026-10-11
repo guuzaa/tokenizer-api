@@ -1,126 +1,133 @@
 # tokenizer-api
 
-Count tokens for DeepSeek V4.1 chat messages.
+Count the prompt tokens for a [DeepSeek chat completion](https://api-docs.deepseek.com/api/create-chat-completion) request.
 
-The worker renders messages with the V4.1 chat template, then counts tokens with the model tokenizer.
-
-## API
+## Quick start
 
 `POST /v1/token/count`
 
 ```bash
 curl http://localhost:8787/v1/token/count \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-flash",
-    "thinking_mode": "chat",
-    "messages": [
-      { "role": "system", "content": "You are a helpful assistant." },
-      { "role": "user", "content": "Hello" }
-    ]
-  }'
+  -d '{"model":"deepseek-flash","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
 ```json
-{ "data": { "total_tokens": 12 } }
+{"data":{"total_tokens":31}}
 ```
 
-`deepseek-flash`, and any name starting with `deepseek-v4.1-`, uses this encoder. `deepseek-v4.1-flash` is one of those names. The example above is chat mode; omit `thinking_mode` and the default is thinking, which counts more tokens because the prompt includes a reasoning-effort line.
+`pnpm dev` serves that URL. Thinking is on unless you turn it off, and the prompt then includes a reasoning-effort line. The same message with `"thinking":{"type":"disabled"}` returns `{"data":{"total_tokens":5}}`.
+
+## Request
+
+The body is a JSON object. Names and types below match the [chat completions](https://api-docs.deepseek.com/api/create-chat-completion) request where this endpoint uses that field. Link there for the full chat schema. This service only counts the prompt.
+
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `model` | string | yes | | `deepseek-flash`, or any name that starts with `deepseek-v4.1-` (`deepseek-v4.1-flash` is one). |
+| `messages` | object[] | yes | | At least one message. See below. |
+| `thinking` | object | no | `{"type":"enabled"}` | `type` is `enabled` or `disabled`. |
+| `reasoning_effort` | string or integer | no | `high` | `low` (budget 50), `high` (75), `max` (100), or an integer from 1 to 100. The line is written only in thinking mode. |
+| `tools` | object[] | no | | Function tools. Copied onto the first system message, or onto a new empty system message. An empty list is ignored. |
+| `thinking_mode` | string | no | `thinking` | Extra field. `thinking` or `chat`. Same switch as `thinking`. |
+| `enable_thinking` | boolean | no | `true` | Extra field. Same switch as `thinking`. |
+| `drop_thinking` | boolean | no | `true` | Extra field. In thinking mode, omit `reasoning_content` from assistant turns before the last user message. |
+
+`thinking`, `thinking_mode`, and `enable_thinking` must agree when more than one is set. `disabled`, `chat`, and `false` are the non-thinking mode.
+
+Rejected `reasoning_effort` values: `none`, `minimal`, `medium`, and `xhigh`. Turn thinking off with `thinking.type` set to `disabled`.
+
+A request `tools` list is skipped when the first message is already a system message with its own `tools`. If any message has `tools`, `reasoning_content` is kept even when `drop_thinking` is true.
 
 ### Messages
 
-`messages` is a non-empty array. `content` is a string or a list of text and image blocks (`type` `text`, `image`, or `image_url`). An image block is the `<｜deepseek_image｜>` placeholder.
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `role` | string | yes | | `system`, `user`, `assistant`, or `tool`. `latest_reminder` is also accepted. |
+| `content` | string or object[] | yes for system and user | | User and tool content may be a string or an array of content parts. |
+| `reasoning_content` | string | no | | Assistant thinking text. Counted in thinking mode when it is not dropped. |
+| `tool_calls` | object[] | no | | Assistant function calls. `function.arguments` may be an object or a JSON object string. |
+| `tool_call_id` | string | yes on `tool` | | Tool call this message answers. The tool turn is merged into a user turn. |
+| `tools` | object[] | no | | On a system message, the schemas are written into that turn. |
+| `response_format` | object | no | | On a system message, the schema is written into that turn. |
+| `name` | string | no | | Ignored. |
+| `prefix` | boolean | no | | Ignored. |
 
-`tools` is an OpenAI tool list (`{ "type": "function", "function": { ... } }`). A list on the request is written into the leading system message, or into a new empty system message when the conversation does not start with one. A list already present on that system message is kept. The schemas are written into the prompt. Tool-call `arguments` may be an object or a JSON object string.
+Content parts follow the chat API: `text` (`text`) and `image_url` (`image_url.url`, a string or `{ "url": "..." }`). An image part counts as one placeholder token. Image bytes are unused, and `detail` is ignored. A part with `type: "image"` and `source`, `url`, or `data` is the same placeholder. A `file` part becomes the text `[Unsupported file]`.
 
-`tool_calls` on an assistant message is an OpenAI tool-call list. A `role: "tool"` message (`tool_call_id` plus `content`) is merged into a user turn as a `<tool_result>` block. Tool `content` must be a string, or a list of content blocks. Objects, numbers, booleans, and null are rejected: the official encoder prints those with Python's `repr`, and a JSON body cannot reproduce that exactly (`22.0` and `22` are the same number after parsing).
+Tool `content` must be a string or an array of content parts. A number, boolean, or object is rejected. A `tool` message is merged into the following user turn as a tool result.
 
-`reasoning_content` on an assistant message is that turn's thinking text.
+A message may also set `task` (`action`, `query`, `authority`, `domain`, `title`, or `read_url`) and `wo_eos` (boolean). Those are not chat-completion fields.
 
-Roles: `system`, `user`, `assistant`, `tool`, and `latest_reminder`. A system message is marked with `<｜System｜>`, including one in the middle of the conversation.
+### Ignored chat-completion fields
 
-### Options
+These fields are accepted and left unused: `max_tokens`, `stop`, `stream`, `stream_options`, `temperature`, `top_p`, `tool_choice`, `logprobs`, `top_logprobs`, `frequency_penalty`, `presence_penalty`, `user_id`, and a top-level `response_format`. `stream: true` still returns one JSON object.
 
-The prompt format comes from `config/deepseek-v4.1/encoding.py`. The prompt includes the BOS token and the assistant header.
+## Response
 
-`thinking` is `{ "type": "enabled" }` or `{ "type": "disabled" }`. Enabled opens the turn with `<think>`. Disabled closes it with `</think>`. `thinking_mode` (`thinking` or `chat`) and `enable_thinking` (`true` or `false`) are the same switch. When more than one is set they must agree. The default is thinking.
+`200` with `Content-Type: application/json; charset=utf-8`.
 
-`drop_thinking` defaults to `true`. In thinking mode, `reasoning_content` on assistant turns before the last user message is left out of the prompt. If any message has `tools`, thinking is kept.
+```json
+{"data":{"total_tokens":31}}
+```
 
-`reasoning_effort` is `low`, `high`, `max`, an integer from 1 to 100, or omitted. The default is `high`. In thinking mode the prompt starts with `Reasoning Effort: {budget}`. `low` is 50, `high` is 75, and `max` is 100. An integer is used as the budget.
+`total_tokens` is the rendered prompt. In a chat completion, `usage.total_tokens` also includes the generated completion.
 
-### Limits
+## Errors
 
-The free-plan defaults keep a worst-case request under the 10 ms CPU limit. The raw JSON body must be at most 48 KiB (`49152` bytes). The rendered prompt must be at most 8 KiB (`8192` bytes). Over either cap, the response is 413 `request_too_large`, and the tokenizer does not run. A body over the cap is rejected before `JSON.parse`. A prompt over the cap is rejected after the template is rendered and before tokenization.
+```json
+{"error":{"message":"messages must be a non-empty array","type":"invalid_request_error"}}
+```
 
-A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (170 bytes around an empty user message).
+| Status | `type` | When |
+| --- | --- | --- |
+| 400 | `invalid_request_error` | The body is not a JSON object, `model` is missing, the model name is unsupported, the encoder rejects the body, or the prompt contains an unpaired UTF-16 surrogate. |
+| 401 | `authentication_error` | `API_KEYS` is set and the bearer token is missing or unknown. Message: `invalid api key`. |
+| 404 | `not_found` | The path is not `/v1/token/count`. |
+| 405 | `method_not_allowed` | The path is `/v1/token/count` and the method is not `POST`. |
+| 413 | `request_too_large` | The raw body or the rendered prompt is over its cap. The tokenizer is skipped. |
+| 429 | `rate_limit_error` | The caller is over 60 requests in 60 seconds. Header: `Retry-After: 60`. |
+| 500 | `internal_error` | Rendering or counting failed unexpectedly. |
 
-Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). A positive integer replaces that default. An unset or invalid value leaves its default in place. The two settings are independent.
+A body over the cap is rejected before it is parsed. The 413 message is `request body exceeds 49152 bytes` or `rendered prompt exceeds 8192 bytes`, using the configured caps.
 
-Wasm memory stays about 58 MiB through an 8 KiB prompt and about 62 MiB at 128 KiB. A 1 MiB prompt with no whitespace grew it to about 133 MiB, past the 128 MiB isolate limit, so keep a paid prompt at or below 128 KiB.
+## Limits and rate limiting
 
-On the Workers Paid plan the default CPU limit is 30 seconds and `limits.cpu_ms` can raise it up to 5 minutes. Do not set `limits.cpu_ms` on the free plan; that configuration is rejected. A 128 KiB digit run measured about 90 ms (max 95 ms) in workerd. A paid deploy can raise the caps and set the CPU limit above that measurement:
+The raw JSON body may be at most 48 KiB (`49152` bytes). The rendered prompt may be at most 8 KiB (`8192` bytes).
+
+Each caller may send 60 requests per 60 seconds. The [Workers rate limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) counts per Cloudflare location. Public requests are keyed on `CF-Connecting-IP`. Requests with no such header share an `unknown` bucket. A valid API key is keyed on a hash of that key. The limit is applied before the 401 check, so an unknown bearer token still counts against the IP bucket.
+
+## Configuration
+
+`wrangler.toml` sets the caps and the rate limit. A positive integer in either var replaces that default. Anything else leaves the default. The two caps are independent.
 
 ```toml
 [vars]
-MAX_PROMPT_BYTES = "131072"
-MAX_BODY_BYTES = "786432"
-
-[limits]
-cpu_ms = 200
+MAX_PROMPT_BYTES = "8192"
+MAX_BODY_BYTES = "49152"
 ```
 
-`786432` is 768 KiB, enough for a `\uXXXX` encoding of a 128 KiB prompt. The isolate encodes a max-size digit run four times at startup so the first request does not pay the one-time cost. That stays inside the 1 second startup limit.
+On the free plan, leave `[limits] cpu_ms` unset. A paid deploy can raise the two vars and set `cpu_ms`.
 
-### Errors
-
-```json
-{ "error": { "message": "messages must be a non-empty array", "type": "invalid_request_error" } }
-```
-
-| Status | `type` |
-| --- | --- |
-| 400 | `invalid_request_error` |
-| 401 | `authentication_error` |
-| 404 | `not_found` |
-| 405 | `method_not_allowed` |
-| 413 | `request_too_large` |
-| 429 | `rate_limit_error` |
-| 500 | `internal_error` |
-
-A 429 includes `Retry-After: 60`.
-
-An unpaired UTF-16 surrogate in the rendered prompt is 400. The counter is the Rust `tokenizers` crate, and a Rust string cannot hold that value. Well-formed text, including emoji, is counted.
-
-### Tokenizer
-
-Counts use the Hugging Face [`tokenizers`](https://github.com/huggingface/tokenizers) crate (0.23) compiled to `wasm32-unknown-unknown`. The build turns default features off and enables `unstable_wasm`, so regular expressions use `fancy-regex` rather than the C `onig` library. `config/deepseek-v4.1/tokenizer.json` is embedded in the wasm module. Special tokens are not added during encode; the chat template writes them into the prompt.
-
-The wasm module is built, not committed. `pnpm test`, `pnpm check`, `pnpm dev`, and `pnpm deploy` run that build first.
-
-### Access
-
-The endpoint is public unless the `API_KEYS` secret is set.
-
-Each caller may send 60 requests per 60 seconds. The [Workers Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) enforces that per Cloudflare location, not as one global counter. Public requests are keyed on `CF-Connecting-IP`. Requests with no such header share an `unknown` bucket. A request with a valid API key is keyed on a hash of that key, so callers behind one shared IP are not mixed together.
-
-To require a key, set `API_KEYS` to a comma-separated list of bearer tokens. Do not commit the value.
+The endpoint is public until the `API_KEYS` secret is set. The value is a comma-separated list of bearer tokens. Do not commit it.
 
 ```bash
 wrangler secret put API_KEYS
 ```
 
-Then send `Authorization: Bearer <token>`. A missing or unknown token is 401. With no `API_KEYS` secret, the endpoint stays public. The limit and the binding name are in `wrangler.toml`.
+Send `Authorization: Bearer <token>`. With no secret, a bearer token is ignored and the endpoint stays public. The limit and the binding name are in `wrangler.toml`. The deploy route there is `api.paulden.site`.
 
-## Develop
+## Development
 
 ```bash
 pnpm install
 pnpm dev
 pnpm test
 pnpm check
+pnpm bench
+pnpm deploy
 ```
 
-Installs use `registry.npmjs.org` (`.npmrc`). The package manager is pnpm 12 (`packageManager` in `package.json`).
+Installs use `registry.npmjs.org`. The package manager is pnpm 12 (`packageManager` in `package.json`).
 
-`pnpm test` runs the node tests and the workerd tests (`@cloudflare/vitest-plugin`). Those commands need Rust, the `wasm32-unknown-unknown` target, and `wasm-bindgen` 0.2.129. `scripts/build-wasm.sh` installs that `wasm-bindgen` release if it is missing. CI installs the Rust toolchain before the tests.
+`pnpm dev`, `pnpm test`, `pnpm check`, and `pnpm deploy` build the wasm module first (`pnpm build:wasm`). That build needs Rust, the `wasm32-unknown-unknown` target, and wasm-bindgen 0.2.129. `scripts/build-wasm.sh` installs that wasm-bindgen release when it is missing, and embeds `config/deepseek-v4.1/tokenizer.json`. `pnpm test` runs the node tests and the workerd tests. `pnpm bench` times the counter under workerd. `pnpm types` refreshes the Wrangler types.
