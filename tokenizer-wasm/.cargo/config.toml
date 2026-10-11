@@ -1,8 +1,0 @@
-[target.wasm32-unknown-unknown]
-rustflags = [
-  "--cfg",
-  'getrandom_backend="custom"',
-  # The embedded vocab's JSON parse needs more than the default 1 MiB wasm stack.
-  "-C",
-  "link-arg=-zstack-size=16777216",
-]

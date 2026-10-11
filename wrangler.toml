@@ -1,5 +1,5 @@
 name = "token-count"
-main = "src/index.ts"
+main = "crates/worker/build/worker/shim.mjs"
 compatibility_date = "2026-10-09"
 
 routes = [{ pattern = "api.paulden.site", custom_domain = true }]
@@ -37,3 +37,7 @@ head_sampling_rate = 1
 [observability.traces]
 enabled = true
 head_sampling_rate = 0.01
+
+# scripts/build-worker.sh installs worker-build 0.8.7 and runs it in the crate.
+[build]
+command = "bash scripts/build-worker.sh"

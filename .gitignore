@@ -5,8 +5,8 @@ dist
 test/.bundle
 test/.bench-bundle
 bench/.wrangler
-tokenizer-wasm/target
-tokenizer-wasm/pkg
+target
+crates/worker/build
 
 __pycache__/
 .DS_Store

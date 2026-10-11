@@ -121,13 +121,12 @@ Send `Authorization: Bearer <token>`. With no secret, a bearer token is ignored 
 
 ```bash
 pnpm install
-pnpm dev
+cargo test -p encode
 pnpm test
-pnpm check
-pnpm bench
+pnpm dev
 pnpm deploy
 ```
 
 Installs use `registry.npmjs.org`. The package manager is pnpm 12 (`packageManager` in `package.json`).
 
-`pnpm dev`, `pnpm test`, `pnpm check`, and `pnpm deploy` build the wasm module first (`pnpm build:wasm`). That build needs Rust, the `wasm32-unknown-unknown` target, and wasm-bindgen 0.2.129. `scripts/build-wasm.sh` installs that wasm-bindgen release when it is missing, and embeds `config/deepseek-v4.1/tokenizer.json`. `pnpm test` runs the node tests and the workerd tests. `pnpm bench` times the counter under workerd. `pnpm types` refreshes the Wrangler types.
+`cargo test -p encode` checks the chat template against `test/test_data/deepseek-v4.1`. `pnpm test`, `pnpm dev`, and `pnpm deploy` build the wasm worker first. That build needs Rust 1.94.0 and the `wasm32-unknown-unknown` target (`rust-toolchain.toml`). `scripts/build-worker.sh` installs worker-build 0.8.7 and wasm-bindgen 0.2.129 when they are missing, and embeds `config/deepseek-v4.1/tokenizer.json`. `pnpm test` replays `fixtures/golden.json` in workerd. CI installs that toolchain, then runs `cargo fmt`, `cargo clippy`, the crate tests, the wasm build, and the golden replay.
