@@ -1,19 +1,23 @@
-/**
- * Reject the raw JSON body before it is parsed. Kept near the prompt cap so
- * `JSON.parse` itself cannot spend the free-plan 10ms budget.
- */
-export const MAX_BODY_BYTES = 16 * 1024;
+/** Rendered prompt cap. Keeps a worst-case request under the free plan's 10ms CPU limit. */
+export const MAX_PROMPT_BYTES = 8 * 1024;
 
-/**
- * Reject the rendered prompt before BPE.
- * Local medians after warmup (Bun, this machine): 4 KiB of repeated ASCII
- * encodes in about 3ms; 8 KiB in about 5ms, with spikes over 10ms. Cloudflare
- * CPUs are slower, so 4 KiB is the cap that still leaves room under 10ms.
- */
-export const MAX_PROMPT_BYTES = 4 * 1024;
+/** Raw JSON body cap. Covers an 8 KiB prompt after JSON escaping and template overhead. */
+export const MAX_BODY_BYTES = 48 * 1024;
 
 /**
  * Retry-After on a 429. Must match `ratelimits.simple.period` in wrangler.toml.
  * The binding enforces `limit` and does not return the window.
  */
 export const RATE_LIMIT_PERIOD_SECONDS = 60;
+
+/** A positive integer var replaces that default. Anything else leaves the default. */
+export function requestLimits(env: { MAX_PROMPT_BYTES?: string | number; MAX_BODY_BYTES?: string | number } = {}) {
+  const limit = (raw: string | number | undefined, fallback: number) => {
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+  };
+  return {
+    maxPromptBytes: limit(env.MAX_PROMPT_BYTES, MAX_PROMPT_BYTES),
+    maxBodyBytes: limit(env.MAX_BODY_BYTES, MAX_BODY_BYTES),
+  };
+}

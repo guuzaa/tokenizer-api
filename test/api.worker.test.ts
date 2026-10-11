@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/vitest-plugin/types" />
 import { env } from "cloudflare:test";
 import { expect, test } from "vitest";
+import { MAX_BODY_BYTES } from "../src/limits";
 
 const api = (env as unknown as { API: Fetcher }).API;
 
@@ -48,11 +49,33 @@ test("counts a few other prompts inside workerd", async () => {
   expect(await effort.json()).toEqual({ data: { total_tokens: 84 } });
 });
 
+test("rejects an unpaired surrogate inside workerd", async () => {
+  const response = await post(
+    { model: "deepseek-v4", messages: [{ role: "user", content: "\uD800" }] },
+    "203.0.113.15",
+  );
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: { message: "text contains an unpaired surrogate", type: "invalid_request_error" },
+  });
+});
+
 test("rejects an unknown model inside workerd", async () => {
   const response = await post({ model: "gpt-4o", messages: [{ role: "user", content: "hi" }] }, "203.0.113.14");
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
     error: { message: "unsupported model: gpt-4o", type: "invalid_request_error" },
+  });
+});
+
+test("rejects an oversized body inside workerd before counting", async () => {
+  const response = await post(
+    { model: "deepseek-v4", messages: [{ role: "user", content: "x".repeat(MAX_BODY_BYTES) }] },
+    "203.0.113.16",
+  );
+  expect(response.status).toBe(413);
+  expect(await response.json()).toEqual({
+    error: { message: `request body exceeds ${MAX_BODY_BYTES} bytes`, type: "request_too_large" },
   });
 });
 
