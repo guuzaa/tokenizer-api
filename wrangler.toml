@@ -16,9 +16,9 @@ namespace_id = "1001"
   limit = 60
   period = 60
 
-# Free-plan caps. See the README for a paid-plan example. Do not set
-# [limits] cpu_ms here: the free plan rejects a configured CPU limit.
-# MAX_BODY_BYTES must cover a `\uXXXX` encoding of a MAX_PROMPT_BYTES prompt.
+# Free-plan caps. A positive integer replaces that default. See the README
+# for a paid-plan example. Do not set [limits] cpu_ms here: the free plan
+# rejects a configured CPU limit.
 [vars]
 MAX_PROMPT_BYTES = "8192"
 MAX_BODY_BYTES = "49152"

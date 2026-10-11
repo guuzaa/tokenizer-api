@@ -54,9 +54,9 @@ The free-plan defaults keep a worst-case request under the 10 ms CPU limit. The 
 
 A long run of digits is the slowest input measured in workerd. At 8 KiB that request averages about 5 ms and a single warm request stays around 6–7 ms. The next sizes measured, 10 KiB and up, do not leave enough room under 10 ms. The body cap is the size of that prompt written with `\uXXXX` escapes, plus the JSON envelope and the chat-template overhead (66 bytes around an empty user message).
 
-Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). Unset vars use the defaults above. A value that is not a positive integer, a prompt outside 1024–131072 bytes, or a body that is not within 4096 bytes above the escaping minimum for that prompt, is ignored and the defaults are used.
+Both caps are [vars](https://developers.cloudflare.com/workers/wrangler/configuration/#vars). A positive integer replaces that default. An unset or invalid value leaves its default in place. The two settings are independent.
 
-Wasm memory stays about 58 MiB through an 8 KiB prompt and about 62 MiB at 128 KiB. A 1 MiB prompt with no whitespace grew it to about 133 MiB, past the 128 MiB isolate limit, so vars cannot select a prompt above 128 KiB.
+Wasm memory stays about 58 MiB through an 8 KiB prompt and about 62 MiB at 128 KiB. A 1 MiB prompt with no whitespace grew it to about 133 MiB, past the 128 MiB isolate limit, so keep a paid prompt at or below 128 KiB.
 
 On the Workers Paid plan the default CPU limit is 30 seconds and `limits.cpu_ms` can raise it up to 5 minutes. Do not set `limits.cpu_ms` on the free plan; that configuration is rejected. A 128 KiB digit run measured about 90 ms (max 95 ms) in workerd. A paid deploy can raise the caps and set the CPU limit above that measurement:
 

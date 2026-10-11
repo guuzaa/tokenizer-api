@@ -1,6 +1,6 @@
 import { encodeMessages } from "./encoding/deepseek-v4";
 import { handleCount } from "./handle";
-import { MAX_PROMPT_BYTES, PROMPT_TEMPLATE_BYTES } from "./limits";
+import { MAX_PROMPT_BYTES } from "./limits";
 import { countTokens } from "./models/deepseek-v4-tokenizer";
 import { models } from "./models/runtime";
 
@@ -10,7 +10,7 @@ import { models } from "./models/runtime";
 // read a request body, so this stays synchronous.
 const warmupJson = JSON.stringify({
   model: "deepseek-v4",
-  messages: [{ role: "user", content: "7".repeat(MAX_PROMPT_BYTES - PROMPT_TEMPLATE_BYTES) }],
+  messages: [{ role: "user", content: "7".repeat(MAX_PROMPT_BYTES) }],
 });
 for (let attempt = 0; attempt < 4; attempt++) {
   const payload = JSON.parse(warmupJson) as { messages: { role: string; content: string }[] };

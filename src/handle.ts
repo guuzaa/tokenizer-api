@@ -1,15 +1,17 @@
 import { EncodeError } from "./encoding/deepseek-v4";
 import { TokenizerInputError } from "./tokenizer";
-import { RATE_LIMIT_PERIOD_SECONDS, resolveRequestLimits, type LimitEnv } from "./limits";
+import { RATE_LIMIT_PERIOD_SECONDS, requestLimits } from "./limits";
 import { modelFamilies, resolveModel } from "./models/registry";
 import type { CountFn, Model, ModelFamily } from "./models/types";
 
 export type { CountFn };
 
-export interface CountEnv extends LimitEnv {
+export interface CountEnv {
   RATE_LIMITER?: RateLimit;
   /** Comma-separated bearer tokens. When unset or empty, the endpoint is public. */
   API_KEYS?: string;
+  MAX_BODY_BYTES?: string | number;
+  MAX_PROMPT_BYTES?: string | number;
 }
 
 const encoder = new TextEncoder();
@@ -142,7 +144,7 @@ export async function handleCount(request: Request, env: CountEnv = {}, options?
   const denied = await enforceAccess(request, env);
   if (denied) return denied;
 
-  const limits = resolveRequestLimits(env);
+  const limits = requestLimits(env);
   const bodyBytes = await readBody(request, limits.maxBodyBytes);
   if (bodyBytes === "invalid_length") return error(400, "invalid content-length", "invalid_request_error");
   if (bodyBytes === "too_large") {
